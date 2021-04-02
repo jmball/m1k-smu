@@ -75,6 +75,7 @@ class smu:
             self._session = pysmu.Session(add_all=False)
 
         if serials is None:
+            self._session.scan()
             serials = [dev.serial for dev in self._session.available_devices]
         elif type(serials) is str:
             serials = [serials]
@@ -163,6 +164,9 @@ class smu:
                     f"Device serial not found: {serial}. Could not disconnect."
                 )
 
+            self.enable_output(False, dev_ix)
+
+            self.set_leds(dev_ix, R=True)
             dev = self._session.devices[dev_ix]
             self._session.remove(dev)
 
