@@ -7,10 +7,22 @@ import sys
 import numpy as np
 import pysmu
 import pyvisa
-import pyyaml
+import yaml
+
+
+cont = input(
+    "WARNING: running this calibration routine will overwrite the interally stored "
+    + "calibration settings of the ADALM1000. Make sure you have a backup copy of the "
+    + "existing calibration before proceeding. Do you wish to continue with "
+    + "overwriting the existing calibration stored in the ADALM1000? [y/n]"
+)
+
+if cont != "y":
+    print("Calibration aborted by user!")
+    sys.exit()
 
 # connect to keithley 2400
-print("Connecting to Keithley 2400")
+print("Connecting to Keithley 2400...")
 address = "ASRL3::INSTR"
 baud = 19200
 flow_control = 1
@@ -28,25 +40,21 @@ keithley2400 = rm.open_resource(
 print("Connected!")
 
 # connect to M1k
-print("Connecting to ADALM1000")
+print("Connecting to ADALM1000...")
 session = pysmu.Session() # add all with default settings, make sure only one is connected
 mk1 = session.devices[0]
 mk1chA = mk1.channels["A"]
 mk1chB = mk1.channels["B"]
+mk1chA.mode = pysmu.Mode.HI_Z
+mk1chB.mode = pysmu.Mode.HI_Z
 mk1.set_led(2)
 print("Connected!")
 
-print(
-    "WARNING: running this calibration routine will overwrite the existing "
-    + "calibration settings. Please make a backup of the existing calibration before "
-    + "continuing."
-)
-cont = input("Do you wish to continue with the calibration? [y/n]") or ""
-
-if cont != "y":
-    print("Calibration aborted by user")
-    sys.exit()
-
+# reset ADALM1000 calibration to default
+default_cal_file = pathlib.Path("calib_default.txt")
+if default_cal_file.exists() is False:
+    raise ValueError(f"Deafult calibration file not found: {default_cal_file}")
+mk1.write_calibraiton(str(default_cal_file))
 
 # save ADALM1000 formatted calibration file in same folder
 cwd = pathlib.Path.cwd()
@@ -381,3 +389,17 @@ measure_voltage_cal("B")
 measure_current_cal("B")
 source_voltage_cal("B")
 source_current_cal("B")
+
+# write new calibration to the device
+write_new_cal = input("Do you wish to write the new calibration file to the ADALM1000? [y/n]")
+if write_new_cal == "y":
+    mk1.write_calibraiton(str(save_file))
+    print("New calibration was written to the device!")
+else:
+    print("New calibration was not written to the device!")
+
+# export calibration dictionary to a yaml file
+with open(save_file_dict, 'w') as f:
+    data = yaml.dump(cal_dict, f)
+
+print("Calibration complete!")
