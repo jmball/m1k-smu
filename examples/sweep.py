@@ -1,10 +1,11 @@
-"""Example using the mk1 library to perform a sweep."""
+"""Example using the m1k library to perform a voltage sweep."""
 
 import matplotlib.pyplot as plt
 
-from . import mk1
+from . import m1k
 
-with mk1.smu() as smu:
+
+with m1k.smu() as smu:
     # connect all available devices
     smu.connect()
 

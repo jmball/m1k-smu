@@ -99,18 +99,18 @@ mk1_settling_delay = int(settling_delay * session.sample_rate)  # number of samp
 mk1_samples = mk1_nplc + mk1_settling_delay
 
 # set measurement data using logarithmic spacing
-cal_voltages = np.logspace(-3, 0, 25) * 5
-cal_voltages = ["0.0000"] + [f"{v:6.4f}" for v in cal_voltages]
+cal_voltages = np.logspace(-3, 0, 14) * 5
+cal_voltages = [f"{v:6.4f}" for v in cal_voltages]
 
-cal_currents_ = np.logspace(-4, -1, 25) * 2
+cal_currents_ = np.logspace(-4, -1, 7) * 2
 cal_currents_0 = [f"{i:6.4f}" for i in cal_currents_]
 cal_currents_1 = [f"{i:6.4f}" for i in -cal_currents_]
 # for current measurements Keithley and ADALM1000 see opposite polarities.
 # cal file has to list +ve current first so for ADALM1000 current measurements
 # keithley should start off sourcing -ve current after 0
-cal_currents_meas = ["0.0000"] + cal_currents_1 + cal_currents_0
+cal_currents_meas = cal_currents_1 + cal_currents_0
 # for ADALM1000 sourcing do the opposite
-cal_currents_source = ["0.0000"] + cal_currents_0 + cal_currents_1
+cal_currents_source = cal_currents_0 + cal_currents_1
 
 # setup keithley
 print("\nConfiguring Keithley 2400...")
@@ -118,6 +118,8 @@ print("\nConfiguring Keithley 2400...")
 keithley2400.write("*RST")
 # Disable the output
 keithley2400.write(":OUTP OFF")
+# Disable beeper
+keithley2400.write(":SYST:BEEP:STAT OFF")
 # Set front terminals
 keithley2400.write(":ROUT:TERM FRONT")
 # Enable 4-wire sense
@@ -161,9 +163,9 @@ def measure_voltage_cal(channel):
 
     # Autorange keithley source votlage and measure current
     keithley2400.write(f":SOUR:FUNC VOLT")
-    keithley2400.write(f":SENS:FUNC 'CURR'")
-    keithley2400.write(f":SOUR:VOLT:AUTO ON")
-    keithley2400.write(f":SENS:CURR:AUTO ON")
+    keithley2400.write(f':SENS:FUNC "CURR"')
+    keithley2400.write(f":SOUR:VOLT:RANG:AUTO ON")
+    keithley2400.write(f":SENS:CURR:RANG:AUTO ON")
 
     # set mk1 to source current measure voltage and set current to 0
     mk1ch.mode = pysmu.Mode.HI_Z
@@ -201,8 +203,8 @@ def measure_voltage_cal(channel):
         cal_dict[mk1.serial][channel]["meas_v"] = cal_ch_meas_v
 
     # turn off smu outputs
-    mk1ch.mode = pysmu.Mode.HI_Z
     mk1.set_led(2)
+    keithley2400.write(":SOUR:VOLT 0")
     keithley2400.write(":OUTP OFF")
 
     print("CHA measure voltage calibration measurement complete!")
@@ -228,8 +230,8 @@ def measure_current_cal(channel):
     # Autorange keithley source votlage and measure current
     keithley2400.write(f":SOUR:FUNC CURR")
     keithley2400.write(f":SENS:FUNC 'VOLT'")
-    keithley2400.write(f":SOUR:CURR:AUTO ON")
-    keithley2400.write(f":SENS:VOLT:AUTO ON")
+    keithley2400.write(f":SOUR:CURR:RANG:AUTO ON")
+    keithley2400.write(f":SENS:VOLT:RANG:AUTO ON")
 
     # set mk1 to source current measure voltage and set current to 0
     mk1ch.mode = pysmu.Mode.SVMI
@@ -271,6 +273,7 @@ def measure_current_cal(channel):
     # turn off smu outputs
     mk1ch.mode = pysmu.Mode.HI_Z
     mk1.set_led(2)
+    keithley2400.write(":SOUR:CURR 0")
     keithley2400.write(":OUTP OFF")
 
     print(f"CH{channel} measure current calibration measurement complete!")
@@ -296,8 +299,14 @@ def source_voltage_cal(channel):
     # Autorange keithley source votlage and measure current
     keithley2400.write(f":SOUR:FUNC CURR")
     keithley2400.write(f":SENS:FUNC 'VOLT'")
-    keithley2400.write(f":SOUR:CURR:AUTO ON")
-    keithley2400.write(f":SENS:VOLT:AUTO ON")
+    keithley2400.write(f":SOUR:CURR:RANG:AUTO ON")
+    keithley2400.write(f":SENS:VOLT:RANG:AUTO ON")
+
+    # set m1k output to 0
+    mk1ch.mode = pysmu.Mode.SVMI
+    mk1ch.constant(0)
+    mk1ch.get_samples(1)
+    mk1.set_led(6)
 
     # set keithley to source zero volts and enable output
     keithley2400.write(":SOUR:CURR 0")
@@ -320,8 +329,6 @@ def source_voltage_cal(channel):
             mk1ch.constant(float(v))
             mk1ch.get_samples(1)
             mk1ch.mode = pysmu.Mode.SVMI
-            if ix == 0:
-                mk1.set_led(6)
             time.sleep(0.1)
             keithley_data = keithley2400.query_ascii_values(":READ?")
             keithley_v = keithley_data[0]
@@ -336,6 +343,9 @@ def source_voltage_cal(channel):
         cal_dict[mk1.serial][channel]["source_v"] = cal_ch_sour_v
 
     # turn off smu outputs
+    mk1ch.mode = pysmu.Mode.SVMI
+    mk1ch.constant(0)
+    mk1ch.get_samples(1)
     mk1.set_led(2)
     keithley2400.write(":OUTP OFF")
 
@@ -357,13 +367,19 @@ def source_current_cal(channel):
     else:
         raise ValueError(f"Invalid channel: {channel}. Must be 'A' or 'B'.")
 
-    print(f"\nPerforming CH{channel} source voltage calibration measurement...")
+    print(f"\nPerforming CH{channel} source current calibration measurement...")
 
     # Autorange keithley source votlage and measure current
     keithley2400.write(":SOUR:FUNC VOLT")
     keithley2400.write(":SENS:FUNC 'CURR'")
-    keithley2400.write(":SOUR:VOLT:AUTO ON")
-    keithley2400.write(":SENS:CURR:AUTO ON")
+    keithley2400.write(":SOUR:VOLT:RANG:AUTO ON")
+    keithley2400.write(":SENS:CURR:RANG:AUTO ON")
+
+    # set mk1 output to 0
+    mk1ch.mode = pysmu.Mode.SIMV
+    mk1ch.constant(0)
+    mk1ch.get_samples(1)
+    mk1.set_led(6)
 
     # set the current compliance
     keithley2400.write(":SENS:CURR:PROT 0.25")
@@ -389,8 +405,6 @@ def source_current_cal(channel):
             mk1ch.constant(float(i))
             mk1ch.get_samples(1)
             mk1ch.mode = pysmu.Mode.SIMV
-            if ix == 0:
-                mk1.set_led(6)
             time.sleep(0.1)
             keithley_data = keithley2400.query_ascii_values(":READ?")
             # reverse polarity as SMU's are seeing opposites
@@ -406,6 +420,9 @@ def source_current_cal(channel):
         cal_dict[mk1.serial][channel]["source_i"] = cal_ch_sour_i
 
     # turn off smu outputs
+    mk1ch.mode = pysmu.Mode.SIMV
+    mk1ch.constant(0)
+    mk1ch.get_samples(1)
     mk1.set_led(2)
     keithley2400.write(":OUTP OFF")
 
@@ -439,6 +456,10 @@ input(
 )
 source_current_cal("B")
 
+# export calibration dictionary to a yaml file
+with open(save_file_dict, "w") as f:
+    data = yaml.dump(cal_dict, f)
+
 # # write new calibration to the device
 if cal == "y":
     mk1.write_calibraiton(str(save_file))
@@ -447,10 +468,4 @@ if cal == "y":
         + "ensure calibration is properly stored before measuring again."
     )
 else:
-    print("\nNew calibration was not written to the device!")
-
-# export calibration dictionary to a yaml file
-with open(save_file_dict, "w") as f:
-    data = yaml.dump(cal_dict, f)
-
-print("\nCalibration complete!\n")
+    print("\nCalibration test complete!\n")
