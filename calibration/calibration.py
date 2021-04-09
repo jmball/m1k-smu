@@ -99,10 +99,10 @@ m1k_settling_delay = int(settling_delay * session.sample_rate)  # number of samp
 m1k_samples = m1k_nplc + m1k_settling_delay
 
 # set measurement data using logarithmic spacing
-cal_voltages = np.logspace(-3, 0, 14) * 5
+cal_voltages = np.logspace(-3, 0, 25) * 5
 cal_voltages = [f"{v:6.4f}" for v in cal_voltages]
 
-cal_currents_ = np.logspace(-4, -1, 7) * 2
+cal_currents_ = np.logspace(-4, -1, 25) * 2
 cal_currents_0 = [f"{i:6.4f}" for i in cal_currents_]
 cal_currents_1 = [f"{i:6.4f}" for i in -cal_currents_]
 # for current measurements Keithley and ADALM1000 see opposite polarities.
@@ -469,3 +469,5 @@ if cal == "y":
     )
 else:
     print("\nCalibration test complete!\n")
+
+m1k.set_leds(1)
