@@ -16,14 +16,21 @@ class smu:
     If multiple devices are connected, the object can be treated as a multi-channel
     SMU. Devices are grouped by pysmu into a `Session()` object. Only one session can
     run on the host computer at a time. Attempting to run multiple sessions will cause
-    the program/s to crash.
+    the program/s to crash. An smu object must therefore only be instantiated once in
+    an application.
 
-    Each device has two channels internally but this class exposes the device as a
-    single channel entity with a four-wire measurement mode. Channel A is the master.
+    Each ADALM1000 device has two channels internally but this class uses the device as
+    a single SMU channel with a four-wire measurement mode. Channel A is the master.
+    Channel B (BIN input) is only used for voltage sensing on the GND side of the
+    device under test.
 
     Each device can be configured for two quadrant operation with a 0-5 V range
     (channel A LO connected to ground), or for four quadrant operation with a
     -2.5 - +2.5 V range (channel A LO connected to the 2.5 V ouptut).
+
+    Measurement operations can't be performed on specific individual channels one at
+    a time, it's all or nothing. Output sweeps are always the same for all channels.
+    However, different DC output values can be configured/measured for each channel.
     """
 
     def __init__(self, plf=50):
@@ -41,6 +48,11 @@ class smu:
         # methods to set them.
         self._channel_settings = {}
 
+        # private global settings, which require a session for initialisation
+        # use test for `None` for initialisation in connect method
+        self._nplc = None
+        self._settling_delay = None
+
         # private attribute to hold pysmu session
         self._session = None
 
@@ -56,10 +68,19 @@ class smu:
 
         Make sure everything gets cleaned up properly.
         """
+        # disconnect all devices
         self.disconnect()
 
-    def connect(self, serials=None, session=None):
+        # destroy the session
+        # if a session persists, subsequent attempts to create a new one may cause
+        # a crash
+        del self._session
+
+    def connect(self, serials=None):
         """Connect one or more devices (channels) to the session (SMU).
+
+        WARNING: running this method will reset all channel outputs to 0 V if some
+        devices have already been connected.
 
         Parameters
         ----------
@@ -68,20 +89,17 @@ class smu:
             no devices in the session then the index of the device serial in the list
             will be its channel index. If a single serial is given it will be assigned
             the next available channel index. If `None`, add all available devices.
-        session : pysmu.Session() or None
-            Pysmu session object. If `None`, reuse the existing session attribute if
-            available or create a new one. If in fact a session object does already
-            exist, creating a new one will cause the program/s to crash.
         """
-        if session is not None:
-            # the session was provided
-            self._session = session
-        elif self._session is None:
+        if self._session is None:
             # the session wasn't provided and no session already exists so create one
             self._session = pysmu.Session(add_all=False)
 
-            # init global settings (depends on session being created so do it now)
+        # init global settings if not already set (depends on session being created so
+        # do it now)
+        if self._nplc is None:
             self.nplc = 1
+
+        if self._settling_delay is None:
             self.settling_delay = 0.005
 
         if serials is None:
@@ -97,6 +115,10 @@ class smu:
 
         for serial in serials:
             self._connect(serial)
+
+        # set default output value
+        # this will reset all channel outputs to 0 V
+        self.configure_dc(values=0, source_mode="v")
 
     def _connect(self, serial):
         """Connect a device to the session and configure it with default settings.
@@ -136,49 +158,23 @@ class smu:
                 break
 
         # init new device with default settings
-        self._configure_channel_default(dev_ix)
+        self._configure_channel_default_settings(dev_ix)
         self.enable_output(False, dev_ix)
 
         # channel B is only used for voltage measurement in four wire mode
         self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
 
-    def disconnect(self, serials=None):
-        """Disconnect one or more devices from the session.
+    def disconnect(self):
+        """Disconnect all devices from the session.
 
-        Parameters
-        ----------
-        serials : str, list, or None
-            List of device serial numbers to remove from the session. If `None`, remove
-            all available devices from the session.
+        Disconnecting individual devices would change the remaining channel's indices
+        so is forbidden.
         """
-        if serials is None:
-            serials = [dev.serial for dev in self._session.devices]
-        elif type(serials) is str:
-            serials = [serials]
-        elif type(serials) is not list:
-            raise ValueError(
-                f"Invalid type for serials: {type(serials)}. Must be `str`, `list`, or "
-                + "`None`."
-            )
-
-        for serial in serials:
-            # find device's session index
-            dev_ix = None
-            for ix, dev in enumerate(self._session.devices):
-                if dev.serial == serial:
-                    dev_ix = ix
-                    break
-
-            if dev_ix is None:
-                raise ValueError(
-                    f"Device serial not found: {serial}. Could not disconnect."
-                )
-
+        for ch in range(self.num_channels):
             self.enable_output(False, dev_ix)
 
             self.set_leds(dev_ix, R=True)
-            dev = self._session.devices[dev_ix]
-            self._session.remove(dev)
+            self._session.remove(self._session.devices[dev_ix])
 
     def use_external_calibration(self, channel, data=None):
         """Store measurement data used to calibrate a channel externally to the device.
@@ -210,9 +206,9 @@ class smu:
             }
 
             where the keys "A" and "B" refer to device channels and [data] values are
-            lists of lists of measurement data pairs. For "meas_[x]" keys the format of
+            lists of lists of measurement data. For "meas_[x]" keys the format of
             the sub-lists is [dmm_meas, mk1_meas], for "source_[x]" keys the format of
-            the sub-lists is [mk1_meas, dmm_meas].
+            the sub-lists is [set, mk1_meas, dmm_meas].
 
             If `None`, use calibration data already provided.
         """
@@ -232,29 +228,52 @@ class smu:
             external_cal[sub_ch] = {}
             for meas, data in data_dict.items():
                 if meas.startswith("meas") is True:
-                    x = [row[0] for row in data]
-                    y = [row[1] for row in data]
-                elif meas.startswith("source") is True:
                     x = [row[1] for row in data]
                     y = [row[0] for row in data]
+                    # linearly interpolate data with linear extrapolation for data
+                    # outside measured range
+                    f_int = sp.interpolate.interp1d(
+                        x,
+                        y,
+                        kind="linear",
+                        bounds_error=False,
+                        fill_value="extrapolate"
+                    )
+                    external_cal[sub_ch][meas] = f_int
+                elif meas.startswith("source") is True:
+                    x = [row[1] for row in data]
+                    y = [row[2] for row in data]
+                    z = [row[0] for row in data]
+                    # interpolation for returned values from device
+                    f_int_meas = sp.interpolate.interp1d(
+                        x,
+                        y,
+                        kind="linear",
+                        bounds_error=False,
+                        fill_value="extrapolate"
+                    )
+                    # interpolation for setting the device output
+                    f_int_set = sp.interpolate.interp1d(
+                        y,
+                        z,
+                        kind="linear",
+                        bounds_error=False,
+                        fill_value="extrapolate"
+                    )
+                    external_cal[sub_ch][meas] = {}
+                    external_cal[sub_ch][meas]["meas"] = f_int_meas
+                    external_cal[sub_ch][meas]["set"] = f_int_set
                 else:
                     raise ValueError(
                         f"Invalid calibration key: {meas}. Must be 'meas_v', 'meas_i',"
                         + "'source_v', or 'source_i'."
                     )
 
-                # linearly interpolate data with linear extrapolation for data outside
-                # measured range
-                f_int = sp.interpolate.interp1d(
-                    x, y, kind="linear", bounds_error=False, fill_value="extrapolate"
-                )
-                external_cal[sub_ch][meas] = f_int
-
         self._channel_settings[channel]["calibration_mode"] = "external"
         self._channel_settings[channel]["external_calibration"] = external_cal
 
     def use_internal_calibration(self, channel=None):
-        """Use the devices internal calibration.
+        """Use the device's internal calibration.
 
         Parameters
         ----------
@@ -330,7 +349,7 @@ class smu:
         # update total samples for each data point
         self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
 
-    def configure_channel(
+    def configure_channel_settings(
         self,
         channel=None,
         auto_off=None,
@@ -344,10 +363,6 @@ class smu:
         ----------
         channel : int
             Channel number (0-indexed). If `None`, apply settings to all channels.
-        nplc : float
-            Integration time in number of power line cycles (NPLC).
-        settling_delay : float
-            Settling delay (s).
         auto_off : bool
             Automatically set output to high impedance mode after a measurement.
         four_wire : bool
@@ -365,7 +380,7 @@ class smu:
 
         for ch in channels:
             if default is True:
-                self._configure_channel_default(ch)
+                self._configure_channel_default_settings(ch)
                 self.enable_output(False, ch)
             else:
                 if auto_off is not None:
@@ -383,7 +398,7 @@ class smu:
                             + " 5."
                         )
 
-    def _configure_channel_default(self, channel):
+    def _configure_channel_default_settings(self, channel):
         """Configure a channel with the default settings.
 
         Parameters
@@ -396,7 +411,8 @@ class smu:
             "four_wire": True,
             "v_range": 5,
             "source_mode": "v",
-            "samples": [],
+            "dc_samples": [],
+            "sweep_samples": [],
             "calibration_mode": "internal",
             "external_calibration": {},
         }
@@ -415,11 +431,11 @@ class smu:
         dual : bool
             If `True`, append the reverse sweep as well.
         source_mode : str
-            Desired source mode: "v" for voltage, "c" for current.
+            Desired source mode: "v" for voltage, "i" for current.
         """
-        if source_mode not in ["v", "c"]:
+        if source_mode not in ["v", "i"]:
             raise ValueError(
-                f"Invalid source mode: {source_mode}. Must be 'v' (voltage) or 'c' "
+                f"Invalid source mode: {source_mode}. Must be 'v' (voltage) or 'i' "
                 + "(current)."
             )
 
@@ -433,6 +449,12 @@ class smu:
             step = (stop - start) / (points - 1)
             values = [x * step + start for x in range(points)]
 
+            # update set values according to external calibration
+            if self._channel_settings[ch]["calibration_mode"] == "external":
+                cal = self._channel_settings[ch]["external_calibration"]["A"]
+                f_int = cal[f"source_{source_mode}"]["set"]
+                values = f_int(values).tolist()
+
             # build values array accounting for nplc and settling delay
             new_values = []
             for value in values:
@@ -443,32 +465,43 @@ class smu:
                 _new_values.reverse()
                 new_values += _new_values
 
-            self._channel_settings[ch]["samples"] = new_values
+            self._channel_settings[ch]["sweep_samples"] = new_values
 
-    def configure_sources(self, values=[], source_mode="v"):
-        """Set fixed output voltages for each channel.
+    def configure_dc(self, values=[], source_mode="v"):
+        """Configure a DC output measurement for all channels.
 
         Parameters
         ----------
-        values : list of float
+        values : list of float or int; float or int
             Desired output values in V or A depending on source mode. The list indeices
-            match the channel numbers.
+            match the channel numbers. If a numeric value is given it is applied to all
+            channels.
         source_mode : str
-            Desired source mode: "v" for voltage, "c" for current.
+            Desired source mode during measurement: "v" for voltage, "i" for current.
         """
-        if len(values) != self.num_channels:
+        # validate/format values input
+        if (t := type(values)) == list:
+            if len(values) != (num_channels := self.num_channels):
+                raise ValueError(
+                    "All channel values must be set simulateneously. The are "
+                    + f"{self.num_channels} channels connected but only {len(values)} "
+                    + "values were given."
+                )
+        elif (t == float) or (t == int):
+            values = [values] * num_channels
+        else:
             raise ValueError(
-                "All channel values must be set simulateneously. The are "
-                + f"{self.num_channels} channels connected but only {len(values)} "
-                + "values were given."
-            )
+                f"Invalid type for values: {t}. Must be `list`, `float`, or `int`."
+                )
 
-        if source_mode not in ["v", "c"]:
+        if source_mode not in ["v", "i"]:
             raise ValueError(
-                f"Invalid source mode: {source_mode}. Must be 'v' (voltage) or 'c' "
+                f"Invalid source mode: {source_mode}. Must be 'v' (voltage) or 'i' "
                 + "(current)."
             )
 
+        # setup dc measurement and write values for all channels
+        start_modes = []
         for ch, value in enumerate(values):
             self._channel_settings[ch]["source_mode"] = source_mode
 
@@ -477,24 +510,54 @@ class smu:
                     # channel LO connected to 2.5 V
                     value += 2.5
 
-            self._channel_settings[ch]["samples"] = [value] * self._samples_per_datum
+            # update set value according to external calibration
+            if self._channel_settings[ch]["calibration_mode"] == "external":
+                cal = self._channel_settings[ch]["external_calibration"]["A"]
+                f_int = cal[f"source_{source_mode}"]["set"]
+                value = float(f_int(value))
 
-            mode = self._session.devices[ch].channels["A"].mode
-            if mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
-                # the output is on so set new voltage and get a sample to trigger the
-                # change in output
-                self._session.devices[ch].channels["A"].constant(value)
-                self._session.devices[ch].get_samples(1)
+            self._channel_settings[ch]["dc_samples"] = [value] * self._samples_per_datum
 
-                # getting a sample automatically turns off the output so turn it back
-                # on again in the correct mode
+            # get current mode to determine whether output needs to be re-enabled
+            start_modes.append(self._session.devices[ch].channels["A"].mode)
+
+            # write new value to the channel
+            self._session.devices[ch].flush(channel=0, read=True)
+            self._session.devices[ch].channels["A"].write([value])
+
+        # enable outputs prior to run-read as required to update the device value
+        # doing this in a separate loop after the writes minimises the time the
+        # outputs are enabled before the run, which triggers the change in outputs
+        for ch in range(len(value)):
+            if self._channel_settings[ch]["four_wire"] is True:
+                if source_mode == "v":
+                    mode = pysmu.Mode.SVMI_SPLIT
+                else:
+                    mode = pysmu.Mode.SIMV_SPLIT
+            else:
+                if source_mode == "v":
+                    mode = pysmu.Mode.SVMI
+                else:
+                    mode = pysmu.Mode.SIMV
+            self._session.devices[ch].channels["A"].mode = mode
+
+        # run and read one sample for all channels to update output values
+        self._session.get_samples(1)
+
+        # getting a sample automatically turns off the outputs so turn them back
+        # on again in the correct mode if they were already on
+        for ch, start_mode in enumerate(start_modes):
+            if start_mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
                 self.enable_output(True, ch)
 
-    def measure(self, process_data=True):
+    def measure(self, measurement="dc", process_data=True):
         """Perform the configured sweep or source measurements for all channels.
 
         Parameters
         ----------
+        measurement : {"dc", "sweep"}
+            Measurement to perform based on stored settings from configure_sweep
+            ("sweep") or configure_dc ("dc", default) method calls.
         process : bool
             If `True`, include processing accounting for NPLC and settling delay in
             the returned data.
@@ -505,12 +568,17 @@ class smu:
             Data dictionary of the form:
             {channel: {"raw": raw_data, "processed": processed_data}}.
         """
+        if measurement not in ["dc", "sweep"]:
+            raise ValueError(
+                f"Invalid measurement mode: {measurement}. Must be 'dc' or 'sweep'."
+            )
+
         # get interable of channels now to save repeated lookups later
         channels = range(self.num_channels)
 
         # look up requested number of samples. All channels must be the same so just
         # read from the first channel
-        num_samples_requested = len(self._channel_settings[0]["samples"])
+        num_samples_requested = len(self._channel_settings[0][f"{measurement}_samples"])
 
         # convert requested samples to chunks of samples that fit in the buffers
         data_per_chunk = int(
@@ -519,26 +587,24 @@ class smu:
         samples_per_chunk = data_per_chunk * self._samples_per_datum
         num_chunks = int(math.ceil(num_samples_requested / samples_per_chunk))
 
+        # turn on output leds to indicate output on
+        for ch in channels:
+            self.set_leds(channel=ch, G=True, B=True)
+
         # init data container
         raw_data = {}
-
         # iterate over chunks of data that fit into the buffer
         for i in range(num_chunks):
             # write chunks to devices
             self._session.flush()
             for ch in channels:
-                samples = self._channel_settings[ch]["samples"]
+                samples = self._channel_settings[ch][f"{measurement}_samples"]
                 chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
                 self._session.devices[ch].channel["A"].write(chunk)
 
             # run scans
             t0 = time.time()
             self._session.run(samples_per_chunk)
-
-            # re-enable outputs if required
-            for ch in channels:
-                if self._channel_settings[ch]["auto_off"] is False:
-                    self.enable_output(True, ch)
 
             # read the data chunks and add to raw data container
             for ch in channels:
@@ -550,51 +616,21 @@ class smu:
                     # no previous chunks so create key-value pair
                     raw_data[ch] = data
 
+        # re-enable outputs if required
+        for ch in channels:
+            if self._channel_settings[ch]["auto_off"] is False:
+                self.enable_output(True, ch)
+            else:
+                # turn off output leds
+                self.set_leds(channel=ch, G=True)
+
         # re-format raw data to: (voltage, current, timestamp, status)
         # and process to account for nplc and settling delay if required
-        if process_data is True:
-            formatted_data = self._format_data(raw_data, t0)
-            processed_data = self._process_data(formatted_data, t0)
-        else:
-            processed_data = None
+        processed_data = self._process_data(raw_data, t0)
 
-        return {"raw": raw_data, "processed": processed_data}
+        return processed_data
 
-    def _format_data(self, raw_data, t0):
-        """Format raw data to match Keithley 2400.
-
-        Parameters
-        ----------
-        raw_data : dict
-            Raw data dictionary for all channels.
-        t0 : float
-            Timestamp representing start time (s).
-
-        Returns
-        -------
-        formatted_data : dict
-            Dictionary of formatted data for all channels. Data for each channel is a
-            list of tuples structured as: (voltage, current, timestamp, status).
-        """
-        t_delta = 1 / self._session.sample_rate
-
-        formatted_data = {}
-        for ch in range(self.num_channels):
-            data = []
-            for i, data in enumerate(raw_data[ch]):
-                timestamp = t0 + i * t_delta
-                status = 0
-                current = data[0][1]
-                if self._channel_settings[ch]["four_wire"] is True:
-                    voltage = data[0][0] - data[1][0]
-                else:
-                    voltage = data[0][0]
-                data.extend([(voltage, current, timestamp, status)])
-            formatted_data[ch] = data
-
-        return formatted_data
-
-    def _process_data(self, formatted_data, t0):
+    def _process_data(self, raw_data, t0):
         """Process raw data accounting for NPLC and settling delay.
 
         Parameters
@@ -610,24 +646,65 @@ class smu:
             List of processed data tuples. Tuple structure is: (voltage, current,
             timestamp, status).
         """
+        t_delta = 1 / self._session.sample_rate
+
         processed_data = {}
         for ch in range(self.num_channels):
             # start indices for each measurement value
-            start_ixs = range(0, len(formatted_data[ch]), self._samples_per_datum)
+            start_ixs = range(0, len(raw_data[ch]), self._samples_per_datum)
 
-            data = []
+            timestamps = []
+            A_voltages = []
+            B_voltages = []
+            currents = []
             for i in start_ixs:
                 # final point can overlap with start of next voltage so cut it
-                data_slice = formatted_data[i : i + self._samples_per_datum - 1]
-                timestamp = data_slice[0][0]
-                status = data_slice[0][3]
-                voltages = [d[0] for d in data_slice][self._settling_delay_samples :]
-                voltage = sum(voltages) / len(voltages)
-                currents = [d[1] for d in data_slice][self._settling_delay_samples :]
-                current = sum(currents) / len(currents)
-                data.extend([(voltage, current, timestamp, status)])
+                data_slice = raw_data[i : i + self._samples_per_datum - 1]
+                # discard settling delay data
+                data_slice = data_slice[self._settling_delay_samples :]
 
-            processed_data[ch] = data
+                # approximate datum timestamp, doesn't account for chunking
+                timestamps.append(t0 + i * t_delta * self._samples_per_datum)
+
+                # pick out and process useful data
+                A_voltages = []
+                B_voltages = []
+                A_currents = []
+                for row in data_slice:
+                    A_voltages.append(row[0][0])
+                    B_voltages.append(row[1][0])
+                    A_currents.append(row[0][1])
+
+                A_voltages.append(sum(A_voltages) / len(A_voltages))
+                B_voltages.append(sum(B_voltages) / len(B_voltages))
+                currents.append(sum(A_currents) / len(A_currents))
+
+            # update measured values according to external calibration
+            if self._channel_settings[ch]["calibration_mode"] == "external":
+                A_cal = self._channel_settings[ch]["external_calibration"]["A"]
+                f_int_mva = A_cal[f"meas_v"]
+                f_int_mia = A_cal[f"meas_i"]
+                A_voltages = f_int_mva(A_voltages)
+                currents = f_int_mia(currents).tolist()
+
+                if self._channel_settings[ch]["four_wire"] is True:
+                    B_cal = self._channel_settings[ch]["external_calibration"]["B"]
+                    f_int_mvb = B_cal[f"meas_v"]
+                    B_voltages = f_int_mvb(B_voltages)
+                    voltages = A_voltages - B_voltages
+                else:
+                    voltages = A_voltages
+
+                voltages = voltages.tolist()
+            else:
+                if self._channel_settings[ch]["four_wire"] is True:
+                    voltages = [av - bv for av, bv in zip(A_voltages, B_voltages)]
+                else:
+                    voltages = A_voltages
+
+            processed_data[ch] = [
+                (v, i, t, 0) for v, i, t in zip(voltages, currents, timestamps)
+            ]
 
         return processed_data
 
