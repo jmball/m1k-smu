@@ -411,6 +411,7 @@ class smu:
             "four_wire": True,
             "v_range": 5,
             "source_mode": "v",
+            "sweep_mode": "v",
             "dc_samples": [],
             "sweep_samples": [],
             "calibration_mode": "internal",
@@ -440,6 +441,8 @@ class smu:
             )
 
         for ch in range(self.num_channels):
+            self._channel_settings[ch]["sweep_mode"] = source_mode
+
             if source_mode == "v":
                 if self._channel_settings[ch]["v_range"] == 2.5:
                     # channel LO connected to 2.5 V
@@ -591,6 +594,12 @@ class smu:
         for ch in channels:
             self.set_leds(channel=ch, G=True, B=True)
 
+        # update source mode if sweep measurement
+        if measurement == "sweep":
+            for ch in channels:
+                sweep_mode = self._channel_settings[ch]["sweep_mode"]
+                self._channel_settings[ch]["source_mode"] = sweep_mode
+
         # init data container
         raw_data = {}
         # iterate over chunks of data that fit into the buffer
@@ -601,6 +610,10 @@ class smu:
                 samples = self._channel_settings[ch][f"{measurement}_samples"]
                 chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
                 self._session.devices[ch].channel["A"].write(chunk)
+
+            # enable outputs
+            for ch in channels:
+                self.enable_output(True, ch)
 
             # run scans
             t0 = time.time()
@@ -682,8 +695,14 @@ class smu:
             # update measured values according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
                 A_cal = self._channel_settings[ch]["external_calibration"]["A"]
-                f_int_mva = A_cal[f"meas_v"]
-                f_int_mia = A_cal[f"meas_i"]
+
+                if (source_mode := self._channel_settings[ch]["source_mode"]) == "v":
+                    f_int_mva = A_cal[f"source_v"]["meas"]
+                    f_int_mia = A_cal[f"meas_i"]
+                else:
+                    f_int_mva = A_cal[f"meas_v"]
+                    f_int_mia = A_cal[f"source_i"]["meas"]
+
                 A_voltages = f_int_mva(A_voltages)
                 currents = f_int_mia(currents).tolist()
 
