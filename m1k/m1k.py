@@ -52,6 +52,9 @@ class smu:
         # use test for `None` for initialisation in connect method
         self._nplc = None
         self._settling_delay = None
+        self._nplc_samples = 0
+        self._settling_delay_samples = 0
+        self._samples_per_datum = 0
 
         # private attribute to hold pysmu session
         self._session = None
@@ -94,14 +97,6 @@ class smu:
             # the session wasn't provided and no session already exists so create one
             self._session = pysmu.Session(add_all=False)
 
-        # init global settings if not already set (depends on session being created so
-        # do it now)
-        if self._nplc is None:
-            self.nplc = 1
-
-        if self._settling_delay is None:
-            self.settling_delay = 0.005
-
         if serials is None:
             self._session.scan()
             serials = [dev.serial for dev in self._session.available_devices]
@@ -119,6 +114,15 @@ class smu:
         # set default output value
         # this will reset all channel outputs to 0 V
         self.configure_dc(values=0, source_mode="v")
+
+        # init global settings if not already set
+        # depends on session being created and device being connected and a
+        # measurement having been performed to properly init sample rate
+        if self._nplc is None:
+            self.nplc = 1
+
+        if self._settling_delay is None:
+            self.settling_delay = 0.005
 
     def _connect(self, serial):
         """Connect a device to the session and configure it with default settings.
@@ -171,10 +175,14 @@ class smu:
         so is forbidden.
         """
         for ch in range(self.num_channels):
-            self.enable_output(False, dev_ix)
+            self.enable_output(False, ch)
 
-            self.set_leds(dev_ix, R=True)
-            self._session.remove(self._session.devices[dev_ix])
+            self.set_leds(ch, R=True)
+            self._session.remove(self._session.devices[ch])
+
+        # TODO: calling _close() doesn't really destroy the session
+        self._session._close()
+        self._session = None
 
     def use_external_calibration(self, channel, data=None):
         """Store measurement data used to calibrate a channel externally to the device.
@@ -237,7 +245,7 @@ class smu:
                         y,
                         kind="linear",
                         bounds_error=False,
-                        fill_value="extrapolate"
+                        fill_value="extrapolate",
                     )
                     external_cal[sub_ch][meas] = f_int
                 elif meas.startswith("source") is True:
@@ -250,7 +258,7 @@ class smu:
                         y,
                         kind="linear",
                         bounds_error=False,
-                        fill_value="extrapolate"
+                        fill_value="extrapolate",
                     )
                     # interpolation for setting the device output
                     f_int_set = sp.interpolate.interp1d(
@@ -258,7 +266,7 @@ class smu:
                         z,
                         kind="linear",
                         bounds_error=False,
-                        fill_value="extrapolate"
+                        fill_value="extrapolate",
                     )
                     external_cal[sub_ch][meas] = {}
                     external_cal[sub_ch][meas]["meas"] = f_int_meas
@@ -314,13 +322,10 @@ class smu:
         """
         self._nplc = nplc
 
-        # samples per s
-        sample_rate = self._session.sample_rate
-
         # convert nplc to integration time
         nplc_time = (1 / self.plf) * nplc
 
-        self._nplc_samples = int(nplc_time * sample_rate)
+        self._nplc_samples = int(nplc_time * self._session.sample_rate)
 
         # update total samples for each data point
         self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
@@ -341,10 +346,7 @@ class smu:
         """
         self._settling_delay = settling_delay
 
-        # samples per s
-        sample_rate = self._session.sample_rate
-
-        self._settling_delay_samples = int(settling_delay * sample_rate)
+        self._settling_delay_samples = int(settling_delay * self._session.sample_rate)
 
         # update total samples for each data point
         self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
@@ -483,8 +485,10 @@ class smu:
             Desired source mode during measurement: "v" for voltage, "i" for current.
         """
         # validate/format values input
-        if (t := type(values)) == list:
-            if len(values) != (num_channels := self.num_channels):
+        num_channels = self.num_channels
+        t = type(values)
+        if t == list:
+            if len(values) != num_channels:
                 raise ValueError(
                     "All channel values must be set simulateneously. The are "
                     + f"{self.num_channels} channels connected but only {len(values)} "
@@ -495,7 +499,7 @@ class smu:
         else:
             raise ValueError(
                 f"Invalid type for values: {t}. Must be `list`, `float`, or `int`."
-                )
+            )
 
         if source_mode not in ["v", "i"]:
             raise ValueError(
@@ -531,7 +535,7 @@ class smu:
         # enable outputs prior to run-read as required to update the device value
         # doing this in a separate loop after the writes minimises the time the
         # outputs are enabled before the run, which triggers the change in outputs
-        for ch in range(len(value)):
+        for ch in range(len(values)):
             if self._channel_settings[ch]["four_wire"] is True:
                 if source_mode == "v":
                     mode = pysmu.Mode.SVMI_SPLIT
@@ -552,8 +556,13 @@ class smu:
         for ch, start_mode in enumerate(start_modes):
             if start_mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
                 self.enable_output(True, ch)
+            else:
+                # although output turns off after measurement run, it doesn't
+                # re-set the channel mode in the library to HI_Z so force it manually
+                # here
+                self.enable_output(False, ch)
 
-    def measure(self, measurement="dc", process_data=True):
+    def measure(self, measurement="dc"):
         """Perform the configured sweep or source measurements for all channels.
 
         Parameters
@@ -561,9 +570,6 @@ class smu:
         measurement : {"dc", "sweep"}
             Measurement to perform based on stored settings from configure_sweep
             ("sweep") or configure_dc ("dc", default) method calls.
-        process : bool
-            If `True`, include processing accounting for NPLC and settling delay in
-            the returned data.
 
         Returns
         -------
@@ -587,7 +593,10 @@ class smu:
         data_per_chunk = int(
             math.floor(self._maximum_buffer_size / self._samples_per_datum)
         )
-        samples_per_chunk = data_per_chunk * self._samples_per_datum
+        if num_samples_requested <= self._maximum_buffer_size:
+            samples_per_chunk = num_samples_requested
+        else:
+            samples_per_chunk = data_per_chunk * self._samples_per_datum
         num_chunks = int(math.ceil(num_samples_requested / samples_per_chunk))
 
         # turn on output leds to indicate output on
@@ -609,7 +618,7 @@ class smu:
             for ch in channels:
                 samples = self._channel_settings[ch][f"{measurement}_samples"]
                 chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
-                self._session.devices[ch].channel["A"].write(chunk)
+                self._session.devices[ch].channels["A"].write(chunk)
 
             # enable outputs
             for ch in channels:
@@ -617,11 +626,11 @@ class smu:
 
             # run scans
             t0 = time.time()
-            self._session.run(samples_per_chunk)
+            self._session.run(len(chunk))
 
             # read the data chunks and add to raw data container
             for ch in channels:
-                data = self._session.devices[ch].read(samples_per_chunk, -1)
+                data = self._session.devices[ch].read(len(chunk), -1)
                 try:
                     # add new chunk to previous data
                     raw_data[ch].extend(data)
@@ -634,13 +643,14 @@ class smu:
             if self._channel_settings[ch]["auto_off"] is False:
                 self.enable_output(True, ch)
             else:
-                # turn off output leds
-                self.set_leds(channel=ch, G=True)
+                # turn off output leds and re-set mode
+                self.enable_output(False, ch)
 
         # re-format raw data to: (voltage, current, timestamp, status)
         # and process to account for nplc and settling delay if required
         processed_data = self._process_data(raw_data, t0)
 
+        # return processed_data
         return processed_data
 
     def _process_data(self, raw_data, t0):
@@ -672,7 +682,7 @@ class smu:
             currents = []
             for i in start_ixs:
                 # final point can overlap with start of next voltage so cut it
-                data_slice = raw_data[i : i + self._samples_per_datum - 1]
+                data_slice = raw_data[ch][i : i + self._samples_per_datum - 1]
                 # discard settling delay data
                 data_slice = data_slice[self._settling_delay_samples :]
 
@@ -680,23 +690,24 @@ class smu:
                 timestamps.append(t0 + i * t_delta * self._samples_per_datum)
 
                 # pick out and process useful data
-                A_voltages = []
-                B_voltages = []
-                A_currents = []
+                A_point_voltages = []
+                B_point_voltages = []
+                A_point_currents = []
                 for row in data_slice:
-                    A_voltages.append(row[0][0])
-                    B_voltages.append(row[1][0])
-                    A_currents.append(row[0][1])
+                    A_point_voltages.append(row[0][0])
+                    B_point_voltages.append(row[1][0])
+                    A_point_currents.append(row[0][1])
 
-                A_voltages.append(sum(A_voltages) / len(A_voltages))
-                B_voltages.append(sum(B_voltages) / len(B_voltages))
-                currents.append(sum(A_currents) / len(A_currents))
+                A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
+                B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
+                currents.append(sum(A_point_currents) / len(A_point_currents))
 
             # update measured values according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
                 A_cal = self._channel_settings[ch]["external_calibration"]["A"]
 
-                if (source_mode := self._channel_settings[ch]["source_mode"]) == "v":
+                source_mode = self._channel_settings[ch]["source_mode"]
+                if source_mode == "v":
                     f_int_mva = A_cal[f"source_v"]["meas"]
                     f_int_mia = A_cal[f"meas_i"]
                 else:
