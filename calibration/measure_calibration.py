@@ -151,10 +151,10 @@ def measure_voltage_cal(channel):
     print(f"\nPerforming CH{channel} measure voltage calibration measurement...")
 
     # Autorange keithley source votlage and measure current
-    keithley2400.write(f":SOUR:FUNC VOLT")
-    keithley2400.write(f':SENS:FUNC "CURR"')
-    keithley2400.write(f":SOUR:VOLT:RANG:AUTO ON")
-    keithley2400.write(f":SENS:CURR:RANG:AUTO ON")
+    keithley2400.write(":SOUR:FUNC VOLT")
+    keithley2400.write(':SENS:FUNC "CURR"')
+    keithley2400.write(":SOUR:VOLT:RANG:AUTO ON")
+    keithley2400.write(":SENS:CURR:RANG:AUTO ON")
 
     # set m1k to source current measure voltage and set current to 0
     m1kch.mode = pysmu.Mode.HI_Z
@@ -217,10 +217,10 @@ def measure_current_cal(channel):
     print(f"\nPerforming CH{channel} measure current calibration measurement...")
 
     # Autorange keithley source votlage and measure current
-    keithley2400.write(f":SOUR:FUNC CURR")
-    keithley2400.write(f":SENS:FUNC 'VOLT'")
-    keithley2400.write(f":SOUR:CURR:RANG:AUTO ON")
-    keithley2400.write(f":SENS:VOLT:RANG:AUTO ON")
+    keithley2400.write(":SOUR:FUNC CURR")
+    keithley2400.write(":SENS:FUNC 'VOLT'")
+    keithley2400.write(":SOUR:CURR:RANG:AUTO ON")
+    keithley2400.write(":SENS:VOLT:RANG:AUTO ON")
 
     # set m1k to source current measure voltage and set current to 0
     m1kch.mode = pysmu.Mode.SVMI
@@ -286,10 +286,10 @@ def source_voltage_cal(channel):
     print(f"\nPerforming CH{channel} source voltage calibration measurement...")
 
     # Autorange keithley source votlage and measure current
-    keithley2400.write(f":SOUR:FUNC CURR")
-    keithley2400.write(f":SENS:FUNC 'VOLT'")
-    keithley2400.write(f":SOUR:CURR:RANG:AUTO ON")
-    keithley2400.write(f":SENS:VOLT:RANG:AUTO ON")
+    keithley2400.write(":SOUR:FUNC CURR")
+    keithley2400.write(":SENS:FUNC 'VOLT'")
+    keithley2400.write(":SOUR:CURR:RANG:AUTO ON")
+    keithley2400.write(":SENS:VOLT:RANG:AUTO ON")
 
     # set m1k output to 0
     m1kch.mode = pysmu.Mode.SVMI
@@ -313,7 +313,7 @@ def source_voltage_cal(channel):
         f.write("</>\n")
         # run through the list of voltages
         cal_ch_sour_v = []
-        for ix, v in enumerate(cal_voltages):
+        for v in cal_voltages:
             m1kch.mode = pysmu.Mode.SVMI
             m1kch.constant(float(v))
             m1kch.get_samples(1)
@@ -389,7 +389,7 @@ def source_current_cal(channel):
         f.write("</>\n")
         # run through the list of voltages
         cal_ch_sour_i = []
-        for ix, i in enumerate(cal_currents_source):
+        for i in cal_currents_source:
             m1kch.mode = pysmu.Mode.SIMV
             m1kch.constant(float(i))
             m1kch.get_samples(1)
