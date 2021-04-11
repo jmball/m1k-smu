@@ -3,10 +3,9 @@
 import pathlib
 import sys
 
-sys.path.insert(1, str(pathlib.Path.cwd().parent))
-
 import matplotlib.pyplot as plt
 
+sys.path.insert(1, str(pathlib.Path.cwd().parent))
 import m1k.m1k as m1k
 
 
