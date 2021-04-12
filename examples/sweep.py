@@ -1,4 +1,4 @@
-"""Example using the m1k library to perform a voltage sweep."""
+"""Example using the m1k library to perform voltage sweeps on all connected devices."""
 
 import pathlib
 import sys
@@ -13,13 +13,15 @@ with m1k.smu() as smu:
     # connect all available devices
     smu.connect()
 
-    # configure all outputs
-    smu.configure_all_channels(
-        nplc=1, settling_delay=0.005, auto_off=False, four_wire=True, v_range=5
-    )
+    # configure global settings
+    smu.nplc = 1
+    smu.settling_delay = 0.005
+
+    # configure channel specific settings for all outputs
+    smu.configure_channel_settings(auto_off=False, four_wire=True, v_range=5)
 
     # configure a sweep
-    smu.configure_sweep(start=0, stop=0.6, points=13, dual=True, source_mode="v")
+    smu.configure_sweep(start=0, stop=0.6, points=20, dual=True, source_mode="v")
 
     # measure the sweep
     data = smu.measure("sweep")
@@ -27,16 +29,16 @@ with m1k.smu() as smu:
     # disable output manually because auto-off is false
     smu.enable_output(False)
 
-# extract data for plotting
-voltages_p = [v for v, i, t, s in data[0]]
-currents_p = [i * 1000 for v, i, t, s in data[0]]
-
-# plot the processed data
+# plot the data
 fig, ax = plt.subplots()
-ax.scatter(voltages_p, currents_p)
-ax.axhline(0, lw=0.5)
+for ch, ch_data in data.items():
+    voltages = [v for v, i, t, s in ch_data]
+    currents = [i * 1000 for v, i, t, s in ch_data]
+    ax.scatter(voltages, currents, label=f"channel {ch}")
+ax.axhline(0, lw=0.5, c="black")
 ax.tick_params(direction="in", top=True, right=True, labelsize="large")
 ax.set_xlabel("Applied bias (V)", fontsize="large")
 ax.set_ylabel("Current (mA)", fontsize="large")
+ax.legend()
 
-fig.show()
+plt.show()

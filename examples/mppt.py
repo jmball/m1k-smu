@@ -11,15 +11,15 @@ sys.path.insert(1, str(pathlib.Path.cwd().parent))
 import m1k.m1k as m1k
 
 
-def mppt(smu, v_start=0.3, a=0.1, delay=0.5, t_end=15):
-    """Run a maximum power point tracking scan on the first channel.
+def mppt(smu, v_start=0.3, a=1, delay=0.5, t_end=30):
+    """Run maximum power point tracking scans on all channels.
 
     Parameters
     ----------
     smu : m1k.smu()
         SMU object.
     v_start : float
-        Start voltage for tracker.
+        Start voltage for all trackers.
     a : float
         Learning rate.
     delay : float
@@ -75,78 +75,110 @@ def mppt(smu, v_start=0.3, a=0.1, delay=0.5, t_end=15):
 
         return v_new
 
+    # init container
+    num_channels = smu.num_channels
+    mppt_data = {}
+    for ch in range(num_channels):
+        mppt_data[ch] = []
+
     # init tracker
-    data = []
-    smu.configure_dc(v_start)
-    data.extend(smu.measure("dc")[0])
-    smu.configure_dc(v_start + 0.01)
-    data.extend(smu.measure("dc")[0])
-    v_old = data[0][0]
-    v_lat = data[1][0]
-    p_old = data[0][0] * data[0][1]
-    p_lat = data[1][0] * data[1][1]
-    v_new = calc_new_voltage(v_lat, v_old, p_lat, p_old, a)
+    v_starts = [v_start for ch in range(num_channels)]
+    smu.configure_dc(v_starts)
+    point_data = smu.measure("dc")
+    for ch, ch_data in point_data.items():
+        mppt_data[ch].extend(ch_data)
+
+    v_nexts = [v_start + 0.01 for ch in range(num_channels)]
+    smu.configure_dc(v_nexts)
+    point_data = smu.measure("dc")
+    for ch, ch_data in point_data.items():
+        mppt_data[ch].extend(ch_data)
+
+    v_news = []
+    for ch, ch_data in mppt_data.items():
+        v_old = ch_data[0][0]
+        v_lat = ch_data[1][0]
+        p_old = ch_data[0][0] * ch_data[0][1]
+        p_lat = ch_data[1][0] * ch_data[1][1]
+        v_news.append(calc_new_voltage(v_lat, v_old, p_lat, p_old, a))
 
     # continue mppt
     i = 2
     t_start = time.time()
     while time.time() - t_start < t_end:
-        data.extend(smu.measure(v_new)[0])
-        v_old = data[i - 1][0]
-        v_lat = data[i][0]
-        p_old = data[i - 1][0] * data[i - 1][1]
-        p_lat = data[i][0] * data[i][1]
-        v_new = calc_new_voltage(v_lat, v_old, p_lat, p_old, a)
+        smu.configure_dc(v_news)
+        point_data = smu.measure("dc")
+        for ch, ch_data in point_data.items():
+            mppt_data[ch].extend(ch_data)
+
+        v_news = []
+        for ch, ch_data in mppt_data.items():
+            v_old = ch_data[i - 1][0]
+            v_lat = ch_data[i][0]
+            p_old = ch_data[i - 1][0] * ch_data[i - 1][1]
+            p_lat = ch_data[i][0] * ch_data[i][1]
+            v_news.append(calc_new_voltage(v_lat, v_old, p_lat, p_old, a))
+
         i += 1
         time.sleep(delay)
 
-    return data
+    return mppt_data
 
 
 with m1k.smu() as smu:
     # connect all available devices
     smu.connect()
 
-    # configure all outputs
-    smu.configure_all_channels(
-        nplc=1, settling_delay=0.005, auto_off=False, four_wire=True, v_range=5
-    )
+    # configure global settings
+    smu.nplc = 1
+    smu.settling_delay = 0.005
+
+    # configure channel specific settings for all outputs
+    smu.configure_channel_settings(auto_off=False, four_wire=True, v_range=5)
 
     print("\nRunning mppt...")
 
     # run mppt
-    data = mppt(smu, v_start=0.3, a=0.1, delay=0.5, t_end=15)
+    mppt_data = mppt(smu, v_start=0.1, a=20, delay=0.5, t_end=60)
 
     # disable output manually because auto-off is false
     smu.enable_output(False)
 
-# extract data for plotting
-times = []
-voltages = []
-currents = []
-powers = []
-for v, i, t, s in data:
-    times.append(t)
-    voltages.append(abs(v))
-    currents.append(abs(i * 1000))
-    powers.append(abs(i * v * 1000))
-
 # plot the processed data
 fig, ax = plt.subplots(1, 3)
 ax1, ax2, ax3 = ax
-ax1.scatter(times, voltages)
+
+for ch, ch_data in mppt_data.items():
+    voltages = []
+    currents = []
+    times = []
+    powers = []
+    t0 = ch_data[0][2]
+    for v, i, t, s in ch_data:
+        voltages.append(abs(v))
+        currents.append(abs(i * 1000))
+        times.append(t - t0)
+        powers.append(abs(v * i * 1000))
+    ax1.scatter(times, voltages, label=f"channel {ch}")
+    ax2.scatter(times, currents, label=f"channel {ch}")
+    ax3.scatter(times, powers, label=f"channel {ch}")
+
 ax1.tick_params(direction="in", top=True, right=True, labelsize="large")
 ax1.set_xlabel("Time (s)", fontsize="large")
 ax1.set_ylabel("|Voltage| (V)", fontsize="large")
+ax1.legend()
 
-ax2.scatter(times, currents)
 ax2.tick_params(direction="in", top=True, right=True, labelsize="large")
 ax2.set_xlabel("Time (s)", fontsize="large")
 ax2.set_ylabel("|Current| (mA)", fontsize="large")
+ax2.legend()
 
-ax3.scatter(times, powers)
 ax3.tick_params(direction="in", top=True, right=True, labelsize="large")
 ax3.set_xlabel("Time (s)", fontsize="large")
 ax3.set_ylabel("|Power| (mW)", fontsize="large")
+ax3.legend()
 
-fig.show()
+
+fig.tight_layout()
+
+plt.show()
