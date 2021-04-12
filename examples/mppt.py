@@ -1,4 +1,4 @@
-"""Example using the m1k library to perform max power point tracking on 1 channel."""
+"""Example using the m1k library to perform max power point tracking on all channels."""
 
 import time
 import pathlib
