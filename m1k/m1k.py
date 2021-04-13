@@ -600,6 +600,13 @@ class smu:
             samples_per_chunk = data_per_chunk * self._samples_per_datum
         num_chunks = int(math.ceil(num_samples_requested / samples_per_chunk))
 
+        if num_chunks > 1:
+            warnings.warn(
+                "The requested measurement cannot fit in the device buffer and will be"
+                + " broken into chunks. Consider reducing the number of measurement "
+                + "points, NPLC, or settling delay."
+            )
+
         # turn on output leds to indicate output on
         for ch in channels:
             self.set_leds(channel=ch, G=True, B=True)
