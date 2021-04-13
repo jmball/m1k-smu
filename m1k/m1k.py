@@ -554,14 +554,20 @@ class smu:
                 # here
                 self.enable_output(False, ch)
 
-    def measure(self, measurement="dc"):
-        """Perform the configured sweep or source measurements for all channels.
+    def measure(self, measurement="dc", allow_chunking=False):
+        """Perform the configured sweep or dc measurements for all channels.
 
         Parameters
         ----------
         measurement : {"dc", "sweep"}
             Measurement to perform based on stored settings from configure_sweep
             ("sweep") or configure_dc ("dc", default) method calls.
+        allow_chunking : bool
+            Allow (`True`) or disallow (`False`) measurement chunking. If a requested
+            measurement requires a number of samples that exceeds the size of the
+            device buffer this flag will determine whether it gets broken up into
+            smaller measurement chunks. If set to `False` and the measurement exceeds
+            the buffer size this function will raise a ValueError.
 
         Returns
         -------
@@ -590,6 +596,22 @@ class smu:
         # read from the first channel
         num_samples_requested = len(ch_samples[0])
 
+        # decide whether the request is allowed
+        if num_samples_requested > self._maximum_buffer_size:
+            if allow_chunking is False:
+                raise ValueError(
+                    "The requested measurement cannot fit in the device buffer. "
+                    + "Consider reducing the number of measurement points, NPLC, or "
+                    + "settling delay."
+                )
+            else:
+                warnings.warn(
+                    "The requested measurement cannot fit in the device buffer and "
+                    + "will be broken into chunks. Consider reducing the number of "
+                    + "measurement points, NPLC, or settling delay if this is a "
+                    + "problem."
+                )
+
         # convert requested samples to chunks of samples that fit in the buffers
         data_per_chunk = int(
             math.floor(self._maximum_buffer_size / self._samples_per_datum)
@@ -599,13 +621,6 @@ class smu:
         else:
             samples_per_chunk = data_per_chunk * self._samples_per_datum
         num_chunks = int(math.ceil(num_samples_requested / samples_per_chunk))
-
-        if num_chunks > 1:
-            warnings.warn(
-                "The requested measurement cannot fit in the device buffer and will be"
-                + " broken into chunks. Consider reducing the number of measurement "
-                + "points, NPLC, or settling delay."
-            )
 
         # turn on output leds to indicate output on
         for ch in channels:
