@@ -414,8 +414,9 @@ class smu:
             "v_range": 5,
             "source_mode": "v",
             "sweep_mode": "v",
-            "dc_samples": [],
-            "sweep_samples": [],
+            "dc_values": [],
+            "sweep_values": [],
+            "dual_sweep": True,
             "calibration_mode": "internal",
             "external_calibration": {},
         }
@@ -460,17 +461,8 @@ class smu:
                 f_int = cal[f"source_{source_mode}"]["set"]
                 values = f_int(values).tolist()
 
-            # build values array accounting for nplc and settling delay
-            new_values = []
-            for value in values:
-                new_values += [value] * self._samples_per_datum
-
-            if dual is True:
-                _new_values = copy.deepcopy(new_values)
-                _new_values.reverse()
-                new_values += _new_values
-
-            self._channel_settings[ch]["sweep_samples"] = new_values
+            self._channel_settings[ch]["sweep_values"] = values
+            self._channel_settings[ch]["dual_sweep"] = dual
 
     def configure_dc(self, values=[], source_mode="v"):
         """Configure a DC output measurement for all channels.
@@ -523,7 +515,7 @@ class smu:
                 f_int = cal[f"source_{source_mode}"]["set"]
                 value = float(f_int(value))
 
-            self._channel_settings[ch]["dc_samples"] = [value] * self._samples_per_datum
+            self._channel_settings[ch]["dc_values"] = [value]
 
             # get current mode to determine whether output needs to be re-enabled
             start_modes.append(self._session.devices[ch].channels["A"].mode)
@@ -585,9 +577,18 @@ class smu:
         # get interable of channels now to save repeated lookups later
         channels = range(self.num_channels)
 
+        # build samples list accounting for nplc and settling delay
+        ch_samples = {}
+        for ch in channels:
+            values = self._channel_settings[ch][f"{measurement}_values"]
+            samples = []
+            for value in values:
+                samples += [value] * self._samples_per_datum
+            ch_samples[ch] = samples
+
         # look up requested number of samples. All channels must be the same so just
         # read from the first channel
-        num_samples_requested = len(self._channel_settings[0][f"{measurement}_samples"])
+        num_samples_requested = len(ch_samples[0])
 
         # convert requested samples to chunks of samples that fit in the buffers
         data_per_chunk = int(
@@ -609,34 +610,48 @@ class smu:
                 sweep_mode = self._channel_settings[ch]["sweep_mode"]
                 self._channel_settings[ch]["source_mode"] = sweep_mode
 
+        # determine how many scans to perform, i.e. is this a dual sweep?
+        if measurement == "sweep":
+            # all channels have the same dual sweep setting so just look up the 1st
+            if self._channel_settings[0]["dual_sweep"] is True:
+                num_scans = 2
+            else:
+                num_scans = 1
+        else:
+            num_scans = 1
+
         # init data container
         raw_data = {}
-        # iterate over chunks of data that fit into the buffer
-        for i in range(num_chunks):
-            # write chunks to devices
-            self._session.flush()
-            for ch in channels:
-                samples = self._channel_settings[ch][f"{measurement}_samples"]
-                chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
-                self._session.devices[ch].channels["A"].write(chunk)
+        for scan in range(num_scans):
+            # iterate over chunks of data that fit into the buffer
+            for i in range(num_chunks):
+                # write chunks to devices
+                self._session.flush()
+                for ch in channels:
+                    samples = ch_samples[ch]
+                    if scan == 1:
+                        # this is the second scan of a dual sweep so reverse sample list
+                        samples.reverse()
+                    chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
+                    self._session.devices[ch].channels["A"].write(chunk)
 
-            # enable outputs
-            for ch in channels:
-                self.enable_output(True, ch)
+                # enable outputs
+                for ch in channels:
+                    self.enable_output(True, ch)
 
-            # run scans
-            t0 = time.time()
-            self._session.run(len(chunk))
+                # run scans
+                t0 = time.time()
+                self._session.run(len(chunk))
 
-            # read the data chunks and add to raw data container
-            for ch in channels:
-                data = self._session.devices[ch].read(len(chunk), -1)
-                try:
-                    # add new chunk to previous data
-                    raw_data[ch].extend(data)
-                except KeyError:
-                    # no previous chunks so create key-value pair
-                    raw_data[ch] = data
+                # read the data chunks and add to raw data container
+                for ch in channels:
+                    data = self._session.devices[ch].read(len(chunk), -1)
+                    try:
+                        # add new chunk to previous data
+                        raw_data[ch].extend(data)
+                    except KeyError:
+                        # no previous chunks so create key-value pair
+                        raw_data[ch] = data
 
         # re-enable outputs if required
         for ch in channels:
@@ -746,7 +761,7 @@ class smu:
         enable : bool
             Turn on (`True`) or turn off (`False`) channel outputs.
         channel : int or None
-            Channel number. If `None`, apply to all channels.
+            Channel number (0-indexed). If `None`, apply to all channels.
         """
         if channel is None:
             channels = range(self.num_channels)
@@ -781,7 +796,7 @@ class smu:
         Parameters
         ----------
         channel : int
-            Channel number.
+            Channel number (0-indexed).
 
         Returns
         -------
@@ -796,7 +811,7 @@ class smu:
         Parameters
         ----------
         channel : int or None
-            Channel number. If `None`, apply to all channels.
+            Channel number (0-indexed). If `None`, apply to all channels.
         R : bool
             Turn on (True) or off (False) the red LED.
         G : bool
