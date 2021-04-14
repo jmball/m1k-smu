@@ -82,8 +82,8 @@ class smu:
     def connect(self, serials=None):
         """Connect one or more devices (channels) to the session (SMU).
 
-        WARNING: running this method will reset all channel outputs to 0 V if some
-        devices have already been connected.
+        WARNING: this method should only be called once! Unexpected channel numbering
+        will result if devices are added later.
 
         Parameters
         ----------
@@ -96,9 +96,9 @@ class smu:
         if self._session is None:
             # the session wasn't provided and no session already exists so create one
             self._session = pysmu.Session(add_all=False)
+            self._session.scan()
 
         if serials is None:
-            self._session.scan()
             serials = [dev.serial for dev in self._session.available_devices]
         elif type(serials) is str:
             serials = [serials]
@@ -110,6 +110,27 @@ class smu:
 
         for serial in serials:
             self._connect(serial)
+
+        # find device index for each channel and init channel settings
+        for ch, serial in enumerate(serials):
+            dev_ix = None
+            for ix, dev in enumerate(self._session.devices):
+                if dev.serial == serial:
+                    dev_ix = ix
+                    break
+
+            # init new device with default settings
+            self._configure_channel_default_settings(ch)
+
+            # store mapping between channel and device index in session
+            self._channel_settings[ch]["dev_ix"] = dev_ix
+            self._channel_settings[ch]["serial"] = serial
+
+            # disable output (should already be disabled but just to make sure)
+            self.enable_output(False, ch)
+
+            # channel B is only used for voltage measurement in four wire mode
+            self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
 
         # set default output value
         # this will reset all channel outputs to 0 V
@@ -152,21 +173,8 @@ class smu:
                 return
 
         # it looks like a new device so add it
+        # it will get prepended to the session's device list
         self._session.add(new_dev)
-
-        # find new device's session index
-        dev_ix = None
-        for ix, dev in enumerate(self._session.devices):
-            if dev.serial == serial:
-                dev_ix = ix
-                break
-
-        # init new device with default settings
-        self._configure_channel_default_settings(dev_ix)
-        self.enable_output(False, dev_ix)
-
-        # channel B is only used for voltage measurement in four wire mode
-        self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
 
     def disconnect(self):
         """Disconnect all devices from the session.
@@ -174,11 +182,13 @@ class smu:
         Disconnecting individual devices would change the remaining channel's indices
         so is forbidden.
         """
-        for ch in range(self.num_channels):
-            self.enable_output(False, ch)
+        self.enable_output(False)
 
-            self.set_leds(ch, R=True)
-            self._session.remove(self._session.devices[ch])
+        for dev in self._session.devices:
+            dev.set_led(1)
+            self._session.remove(dev)
+
+        self._channel_settings = {}
 
         # TODO: calling _close() doesn't really destroy the session
         self._session._close()
@@ -297,6 +307,11 @@ class smu:
             self._channel_settings[channel]["calibration_mode"] = "internal"
 
     @property
+    def maximum_buffer_size(self):
+        """Maximum number of samples in write/run/read buffers."""
+        return self._maximum_buffer_size
+
+    @property
     def num_channels(self):
         """Get the number of connected SMU channels."""
         return len(self._session.devices)
@@ -409,6 +424,8 @@ class smu:
             Channel number (0-indexed).
         """
         self._channel_settings[channel] = {
+            "serial": None,
+            "dev_ix": None,
             "auto_off": False,
             "four_wire": True,
             "v_range": 5,
@@ -502,6 +519,7 @@ class smu:
         # setup dc measurement and write values for all channels
         start_modes = []
         for ch, value in enumerate(values):
+            dev_ix = self._channel_settings[ch]["dev_ix"]
             self._channel_settings[ch]["source_mode"] = source_mode
 
             if source_mode == "v":
@@ -518,16 +536,17 @@ class smu:
             self._channel_settings[ch]["dc_values"] = [value]
 
             # get current mode to determine whether output needs to be re-enabled
-            start_modes.append(self._session.devices[ch].channels["A"].mode)
+            start_modes.append(self._session.devices[dev_ix].channels["A"].mode)
 
             # write new value to the channel
-            self._session.devices[ch].flush(channel=0, read=True)
-            self._session.devices[ch].channels["A"].write([value])
+            self._session.devices[dev_ix].flush(channel=0, read=True)
+            self._session.devices[dev_ix].channels["A"].write([value])
 
         # enable outputs prior to run-read as required to update the device value
         # doing this in a separate loop after the writes minimises the time the
         # outputs are enabled before the run, which triggers the change in outputs
         for ch in range(len(values)):
+            dev_ix = self._channel_settings[ch]["dev_ix"]
             if self._channel_settings[ch]["four_wire"] is True:
                 if source_mode == "v":
                     mode = pysmu.Mode.SVMI_SPLIT
@@ -538,7 +557,7 @@ class smu:
                     mode = pysmu.Mode.SVMI
                 else:
                     mode = pysmu.Mode.SIMV
-            self._session.devices[ch].channels["A"].mode = mode
+            self._session.devices[dev_ix].channels["A"].mode = mode
 
         # run and read one sample for all channels to update output values
         self._session.get_samples(1)
@@ -650,12 +669,13 @@ class smu:
                 # write chunks to devices
                 self._session.flush()
                 for ch in channels:
+                    dev_ix = self._channel_settings[ch]["dev_ix"]
                     samples = ch_samples[ch]
                     if scan == 1:
                         # this is the second scan of a dual sweep so reverse sample list
                         samples.reverse()
                     chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
-                    self._session.devices[ch].channels["A"].write(chunk)
+                    self._session.devices[dev_ix].channels["A"].write(chunk)
 
                 # enable outputs
                 for ch in channels:
@@ -667,7 +687,8 @@ class smu:
 
                 # read the data chunks and add to raw data container
                 for ch in channels:
-                    data = self._session.devices[ch].read(len(chunk), -1)
+                    dev_ix = self._channel_settings[ch]["dev_ix"]
+                    data = self._session.devices[dev_ix].read(len(chunk), -1)
                     try:
                         # add new chunk to previous data
                         raw_data[ch].extend(data)
@@ -791,6 +812,7 @@ class smu:
             channels = [channel]
 
         for ch in channels:
+            dev_ix = self._channel_settings[ch]["dev_ix"]
             if enable is True:
                 if self._channel_settings[ch]["four_wire"] is True:
                     if self._channel_settings[ch]["source_mode"] == "v":
@@ -810,7 +832,7 @@ class smu:
                     mode = pysmu.Mode.HI_Z
                 self.set_leds(channel=ch, G=True)
 
-            self._session.devices[ch].channels["A"].mode = mode
+            self._session.devices[dev_ix].channels["A"].mode = mode
 
     def get_channel_id(self, channel):
         """Get the serial number of requested channel.
@@ -825,7 +847,8 @@ class smu:
         channel_serial : str
             Channel serial string.
         """
-        return self._session.devices[channel].serial
+        dev_ix = self._channel_settings[channel]["dev_ix"]
+        return self._session.devices[dev_ix].serial
 
     def set_leds(self, channel=None, R=False, G=False, B=False):
         """Set LED configuration for a channel(s).
@@ -848,5 +871,6 @@ class smu:
         else:
             channels = [channel]
 
-        for i in channels:
-            self._session.devices[i].set_led(setting)
+        for ch in channels:
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            self._session.devices[dev_ix].set_led(setting)
