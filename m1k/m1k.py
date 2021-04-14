@@ -679,7 +679,22 @@ class smu:
 
                 # enable outputs
                 for ch in channels:
-                    self.enable_output(True, ch)
+                    # determine if request is for special case of open-circuit voltage
+                    # measurement requiring HI_Z mode rather than SIMV
+                    if (
+                        (measurement == "dc")
+                        and (self._channel_settings[ch]["source_mode"] == "i")
+                        and (chunk[0] == 0)
+                    ):
+                        if self._channel_settings[ch]["four_wire"] is True:
+                            mode = pysmu.Mode.HI_Z_SPLIT
+                        else:
+                            mode = pysmu.Mode.HI_Z
+
+                        self._session.devices[dev_ix].channels["A"].mode = mode
+                    else:
+                        # not a special case so just enable output as normal
+                        self.enable_output(True, ch)
 
                 # run scans
                 t0 = time.time()
