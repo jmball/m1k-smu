@@ -20,14 +20,6 @@ with m1k.smu() as smu:
     # configure channel specific settings for all outputs
     smu.configure_channel_settings(auto_off=False, four_wire=True, v_range=5)
 
-    # configure a sweep
-    smu.configure_sweep(start=0, stop=0.6, points=20, dual=True, source_mode="v")
-
-    # measure the sweep
-    data = smu.measure("sweep")
-
-    # disable output manually because auto-off is false
-    smu.enable_output(False)
 
 # plot the data
 fig, ax = plt.subplots()

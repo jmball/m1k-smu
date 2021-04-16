@@ -132,9 +132,19 @@ class smu:
             # channel B is only used for voltage measurement in four wire mode
             self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
 
+        ### the order of actions below is critical ####
+
+        # cache session settings for functions that might need them during a continuous
+        # session, when they can't be accessed.
+        self._num_channels = len(self._session.devices)
+
         # set default output value
         # this will reset all channel outputs to 0 V
         self.configure_dc(values=0, source_mode="v")
+
+        # cache session settings for functions that might need them during a continuous
+        # session, when they can't be accessed.
+        self._sample_rate = self._session.sample_rate
 
         # init global settings if not already set
         # depends on session being created and device being connected and a
@@ -144,11 +154,6 @@ class smu:
 
         if self._settling_delay is None:
             self.settling_delay = 0.005
-
-        # cache session settings for functions that might need them during a continuous
-        # session, when they can't be accessed.
-        self._sample_rate = self._session.sample_rate
-        self._num_channels = len(self._session.devices)
 
     def _connect(self, serial):
         """Connect a device to the session and configure it with default settings.
@@ -581,6 +586,7 @@ class smu:
         # outputs are enabled before the run, which triggers the change in outputs
         for ch in range(len(values)):
             dev_ix = self._channel_settings[ch]["dev_ix"]
+            source_mode = self._channel_settings[ch]["source_mode"]
             if self._channel_settings[ch]["four_wire"] is True:
                 if source_mode == "v":
                     mode = pysmu.Mode.SVMI_SPLIT
