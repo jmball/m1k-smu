@@ -1,5 +1,6 @@
 """Example using the m1k library to perform Jsc tracking on all channels."""
 
+import csv
 import pathlib
 import time
 import sys
@@ -9,8 +10,11 @@ import matplotlib.pyplot as plt
 sys.path.insert(1, str(pathlib.Path.cwd().parent))
 import m1k.m1k as m1k
 
+data_folder = pathlib.Path("data")
+save_file = data_folder.joinpath(f"battery_drain_{int(time.time())}.tsv")
 
-def steady_state_jsc(smu, delay=0.5, t_end=30):
+
+def steady_state_v(smu, v=0, delay=0.5, t_end=30):
     """Run Jsc tracking scans on all channels.
 
     Parameters
@@ -27,19 +31,23 @@ def steady_state_jsc(smu, delay=0.5, t_end=30):
     """
     # init container
     num_channels = smu.num_channels
-    jsc_data = {}
+    i_data = {}
     for ch in range(num_channels):
-        jsc_data[ch] = []
+        i_data[ch] = []
 
-    # run steady-state jsc
-    t_start = time.time()
-    while time.time() - t_start < t_end:
-        smu.configure_dc(0, source_mode="v")
-        point_data = smu.measure("dc")
-        for ch, ch_data in point_data.items():
-            jsc_data[ch].extend(ch_data)
+    # run steady-state measurement
+    with open(save_file, "w", newline="\n") as f:
+        writer = csv.writer(f, delimiter="\t")
+        t_start = time.time()
+        while time.time() - t_start < t_end:
+            smu.configure_dc(v, source_mode="v")
+            point_data = smu.measure("dc")
+            for ch, ch_data in point_data.items():
+                i_data[ch].extend(ch_data)
+            writer.writerow(point_data[0])
+            print(point_data[0])
 
-        time.sleep(delay)
+            time.sleep(delay)
 
     return jsc_data
 
@@ -53,12 +61,15 @@ with m1k.smu() as smu:
     smu.settling_delay = 0.005
 
     # configure channel specific settings for all outputs
-    smu.configure_channel_settings(auto_off=False, four_wire=True, v_range=5)
+    smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
 
     print("\nRunning steady-state Jsc...")
 
+    # enable output
+    smu.enable_output(True)
+
     # run mppt
-    jsc_data = steady_state_jsc(smu, delay=0.5, t_end=15)
+    jsc_data = steady_state_v(smu, v=0.57, delay=30, t_end=43200)
 
     # disable output manually because auto-off is false
     smu.enable_output(False)
@@ -79,7 +90,7 @@ for ch, ch_data in jsc_data.items():
 
 ax.tick_params(direction="in", top=True, right=True, labelsize="large")
 ax.set_xlabel("Time (s)", fontsize="large")
-ax.set_ylabel("|Jsc| (mA)", fontsize="large")
+ax.set_ylabel("I (mA)", fontsize="large")
 ax.set_ylim((0, max(max_jscs) * 1.1))
 ax.legend()
 

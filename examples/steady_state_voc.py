@@ -5,7 +5,6 @@ import pathlib
 import sys
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent))
 import m1k.m1k as m1k
