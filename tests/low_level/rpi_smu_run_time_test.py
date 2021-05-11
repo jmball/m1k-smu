@@ -43,7 +43,7 @@ if __name__ == "__main__":
                 warnings.warn(str(e))
 
         t4 = time.time()
-        data = s.read(n)
+        data = s.read(n, -1)
         t5 = time.time()
         print(f"read time: {t5-t4}")
         print(len(data), [len(d) for d in data])
