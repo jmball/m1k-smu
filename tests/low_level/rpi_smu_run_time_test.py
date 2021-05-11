@@ -23,10 +23,19 @@ if __name__ == "__main__":
         t1 = time.time()
         print(f"write time: {t1-t0}s")
 
-        t2 = time.time()
-        s.run(n)
-        t3 = time.time()
-        print(f"run time: {t3-t2}")
+        passed = False
+        i = 0
+        while (passed is False) or (i < 3):
+            try:
+                t2 = time.time()
+                s.run(n)
+                t3 = time.time()
+                print(f"run time: {t3-t2}")
+                passed = True
+            except pysmu.exceptions.SessionError:
+                pass
+
+            i += 1
 
         t4 = time.time()
         data = s.read(n)
