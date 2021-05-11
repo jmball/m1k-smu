@@ -10,7 +10,8 @@ def write_all(v):
     for dev in s.devices:
         dev.channels["A"].write([v], cyclic=False)
 
-    for i in range(3):
+    attempt = 0
+    for _ in range(3):
         print(f"Output on attempt {i}")
         try:
             for dev in s.devices:
@@ -19,7 +20,10 @@ def write_all(v):
         except pysmu.exceptions.DeviceError as e:
             warnings.warn(str(e))
 
-        i += 1
+        attempt += 1
+
+    if attempt == 3:
+        raise RuntimeError("Couldn't update output mode after three attempts.")
 
 
 if __name__ == "__main__":
@@ -31,7 +35,8 @@ if __name__ == "__main__":
         t1 = time.time()
         print(f"write time: {t1-t0}s")
 
-        for i in range(3):
+        attempt = 0
+        for _ in range(3):
             print(f"Run on attempt {i}")
             try:
                 t2 = time.time()
@@ -42,8 +47,13 @@ if __name__ == "__main__":
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
 
-        t4 = time.time()
-        data = s.read(n, -1)
-        t5 = time.time()
-        print(f"read time: {t5-t4}")
-        print(len(data), [len(d) for d in data])
+            attempt += 1
+
+        if attempt == 3:
+            raise RuntimeError("Couldn't run scan after three attempts.")
+        else:
+            t4 = time.time()
+            data = s.read(n, -1)
+            t5 = time.time()
+            print(f"read time: {t5-t4}")
+            print(len(data), [len(d) for d in data])
