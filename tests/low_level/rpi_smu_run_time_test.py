@@ -1,5 +1,5 @@
-import multiprocessing
 import time
+import warnings
 
 import pysmu
 
@@ -10,8 +10,17 @@ def write_all(v):
     for dev in s.devices:
         dev.channels["A"].write([v], cyclic=False)
 
-    for dev in s.devices:
-        dev.channels["A"].mode = pysmu.Mode.SVMI
+    passed = False
+    i = 0
+    while (passed is False) or (i < 3):
+        print(f"Output on attempt {i}")
+        try:
+            for dev in s.devices:
+                dev.channels["A"].mode = pysmu.Mode.SVMI
+        except pysmu.exceptions.DeviceError as e:
+            warnings.warn(str(e))
+
+        i += 1
 
 
 if __name__ == "__main__":
@@ -26,14 +35,15 @@ if __name__ == "__main__":
         passed = False
         i = 0
         while (passed is False) or (i < 3):
+            print(f"Run on attempt {i}")
             try:
                 t2 = time.time()
                 s.run(n)
                 t3 = time.time()
                 print(f"run time: {t3-t2}")
                 passed = True
-            except pysmu.exceptions.SessionError:
-                pass
+            except pysmu.exceptions.SessionError as e:
+                warnings.warn(str(e))
 
             i += 1
 
