@@ -17,6 +17,7 @@ def write_all(v):
         try:
             for dev in s.devices:
                 dev.channels["A"].mode = pysmu.Mode.SVMI
+            passed = True
         except pysmu.exceptions.DeviceError as e:
             warnings.warn(str(e))
 
