@@ -53,7 +53,9 @@ if __name__ == "__main__":
             raise RuntimeError("Couldn't run scan after three attempts.")
         else:
             t4 = time.time()
-            data = s.read(n, -1)
+            # blocking indefinitely can cause program to hang, so just return
+            # immediately
+            data = s.read(n)
             t5 = time.time()
             print(f"read time: {t5-t4}")
             print(len(data), [len(d) for d in data])
