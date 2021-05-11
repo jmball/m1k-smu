@@ -12,7 +12,7 @@ def write_all(v):
 
     attempt = 0
     for _ in range(3):
-        print(f"Output on attempt {i}")
+        print(f"\nOutput on attempt {attempt}")
         try:
             for dev in s.devices:
                 dev.channels["A"].mode = pysmu.Mode.SVMI
@@ -33,16 +33,16 @@ if __name__ == "__main__":
         t0 = time.time()
         write_all(0)
         t1 = time.time()
-        print(f"write time: {t1-t0}s")
+        print(f"write time: {t1-t0} s\n")
 
         attempt = 0
         for _ in range(3):
-            print(f"Run on attempt {i}")
+            print(f"Run on attempt {attempt}")
             try:
                 t2 = time.time()
                 s.run(n)
                 t3 = time.time()
-                print(f"run time: {t3-t2}")
+                print(f"run time: {t3-t2} s\n")
                 break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
@@ -57,5 +57,5 @@ if __name__ == "__main__":
             # immediately
             data = s.read(n)
             t5 = time.time()
-            print(f"read time: {t5-t4}")
+            print(f"read time: {t5-t4} s\n")
             print(len(data), [len(d) for d in data])
