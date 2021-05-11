@@ -10,14 +10,12 @@ def write_all(v):
     for dev in s.devices:
         dev.channels["A"].write([v], cyclic=False)
 
-    passed = False
-    i = 0
-    while (passed is False) or (i < 3):
+    for i in range(3):
         print(f"Output on attempt {i}")
         try:
             for dev in s.devices:
                 dev.channels["A"].mode = pysmu.Mode.SVMI
-            passed = True
+            break
         except pysmu.exceptions.DeviceError as e:
             warnings.warn(str(e))
 
@@ -33,20 +31,16 @@ if __name__ == "__main__":
         t1 = time.time()
         print(f"write time: {t1-t0}s")
 
-        passed = False
-        i = 0
-        while (passed is False) or (i < 3):
+        for i in range(3):
             print(f"Run on attempt {i}")
             try:
                 t2 = time.time()
                 s.run(n)
                 t3 = time.time()
                 print(f"run time: {t3-t2}")
-                passed = True
+                break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
-
-            i += 1
 
         t4 = time.time()
         data = s.read(n)
