@@ -1,6 +1,7 @@
-import pysmu
 import time
-import matplotlib.pyplot as plt
+
+import pysmu
+
 
 s = pysmu.Session()
 devs = s.devices
