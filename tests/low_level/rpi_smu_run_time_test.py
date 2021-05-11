@@ -57,5 +57,5 @@ if __name__ == "__main__":
             # immediately
             data = s.read(n)
             t5 = time.time()
-            print(f"read time: {t5-t4} s\n")
-            print(len(data), [len(d) for d in data])
+            print(f"read time: {t5-t4} s")
+            print(f"Data lengths: {[len(d) for d in data]}\n")
