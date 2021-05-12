@@ -34,13 +34,13 @@ for v in vs:
     s.read(100000, -1)
     data = s.read(2500, -1)
     t2 = time.time()
-    print(f"read time: {t2-t1} s\n")
+    print(f"read time: {t2-t1} s")
     print(f"Data lengths: {[len(d) for d in data]}")
     # removing the variable from memory at creating it again is faster than
     # overwriting
-    # del data
-    # t3 = time.time()
-    # print(f"Del time: {t3-t2} s\n")
+    del data
+    t3 = time.time()
+    print(f"Del time: {t3-t2} s\n")
 
 # end continuous mode
 s.end()
