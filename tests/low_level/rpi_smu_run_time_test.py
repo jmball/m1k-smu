@@ -58,4 +58,9 @@ if __name__ == "__main__":
             data = s.read(n)
             t5 = time.time()
             print(f"read time: {t5-t4} s")
-            print(f"Data lengths: {[len(d) for d in data]}\n")
+            print(f"Data lengths: {[len(d) for d in data]}")
+            # removing the variable from memory at creating it again is faster than
+            # overwriting
+            del data
+            t6 = time.time()
+            print(f"Del time: {t6-t5} s\n")
