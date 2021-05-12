@@ -38,19 +38,30 @@ if attempt == 3:
     raise RuntimeError("Couldn't start continuous mode after three attempts.")
 
 # run some measurements
-vs = [0, 0.5, 1, 1.5]
-for v in vs:
+time.sleep(0.25)
+
+# run some measurements
+vs = [0.25, 0.5, 1, 1.5]
+for i, v in enumerate(vs):
     print(f"Voltage: {v}")
+
+    # write voltages
     t0 = time.time()
-    for ix, dev in enumerate(devs):
+    for dev in devs:
         dev.channels["A"].write([v], cyclic=True)
     t1 = time.time()
     print(f"write time: {t1-t0} s")
+
+    # wait for writes to register
+    time.sleep(0.25)
+
+    # flush read buffers
     for ix, dev in enumerate(devs):
-        # dev.read(100000, -1)
         dev.flush(-1, True)
     t2 = time.time()
     print(f"dummy read time: {t2-t1} s")
+
+    # read data
     data = s.read(2500, -1)
     t3 = time.time()
     print(f"read time: {t3-t2} s")
