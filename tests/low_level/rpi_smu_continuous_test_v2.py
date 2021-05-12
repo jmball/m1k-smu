@@ -47,7 +47,8 @@ for v in vs:
     t1 = time.time()
     print(f"write time: {t1-t0} s")
     for ix, dev in enumerate(devs):
-        dev.read(100000, -1)
+        # dev.read(100000, -1)
+        dev.flush(-1, True)
     t2 = time.time()
     print(f"dummy read time: {t2-t1} s")
     data = s.read(2500, -1)
