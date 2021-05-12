@@ -24,7 +24,6 @@ s.start(0)
 
 # run some measurements
 vs = [0, 0.5, 1, 1.5]
-data = []
 for v in vs:
     print(f"Voltage: {v}")
     t0 = time.time()
@@ -33,13 +32,15 @@ for v in vs:
     t1 = time.time()
     print(f"write time: {t1-t0} s")
     s.read(100000, -1)
-    data.append(s.read(2500, -1))
+    data = s.read(2500, -1)
     t2 = time.time()
-    print(f"read time: {t2-t0} s\n")
-
-# print lengths of data
-for ix, v_data in enumerate(data):
-    print(vs[ix], len(v_data), [len(d) for d in v_data])
+    print(f"read time: {t2-t1} s\n")
+    print(f"Data lengths: {[len(d) for d in data]}")
+    # removing the variable from memory at creating it again is faster than
+    # overwriting
+    # del data
+    # t3 = time.time()
+    # print(f"Del time: {t3-t2} s\n")
 
 # end continuous mode
 s.end()
