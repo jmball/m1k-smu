@@ -12,7 +12,7 @@ def write_all(v):
 
     attempt = 0
     for _ in range(3):
-        print(f"\nOutput on attempt {attempt}")
+        print(f"Output on attempt {attempt}")
         try:
             for dev in s.devices:
                 dev.channels["A"].mode = pysmu.Mode.SVMI
@@ -29,6 +29,9 @@ def write_all(v):
 if __name__ == "__main__":
     n = 100000
 
+    expected_lengths = [n] * len(s.devices)
+    total_times = []
+    dropped_scans = []
     for i in range(100):
         print(f"Scan {i}")
         t0 = time.time()
@@ -59,9 +62,20 @@ if __name__ == "__main__":
             data = s.read(n)
             t5 = time.time()
             print(f"read time: {t5-t4} s")
-            print(f"Data lengths: {[len(d) for d in data]}")
+            lengths = [len(d) for d in data]
+            print(f"Data lengths: {lengths}")
             # removing the variable from memory at creating it again is faster than
             # overwriting
             del data
             t6 = time.time()
             print(f"Del time: {t6-t5} s\n")
+
+        total_times.append(t6 - t0)
+
+        if lengths != expected_lengths:
+            dropped_scans.append(i)
+
+    m = sum(total_times) / len(total_times)
+    print(
+        f"Summary\n-------\nmean time = {m} s\nscans with dropped data: {dropped_scans}"
+    )
