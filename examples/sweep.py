@@ -23,7 +23,7 @@ with m1k.smu() as smu:
     smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
 
     # configure a sweep
-    smu.configure_sweep(start=0, stop=5, points=21, dual=False, source_mode="v")
+    smu.configure_sweep(start=0, stop=0.5, points=21, dual=False, source_mode="v")
 
     # measure the sweep
     data = smu.measure("sweep")

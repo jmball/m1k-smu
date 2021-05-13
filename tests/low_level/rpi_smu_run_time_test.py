@@ -29,7 +29,7 @@ def write_all(v):
 if __name__ == "__main__":
     n = 100000
 
-    for i in range(10):
+    for i in range(100):
         t0 = time.time()
         write_all(0)
         t1 = time.time()
