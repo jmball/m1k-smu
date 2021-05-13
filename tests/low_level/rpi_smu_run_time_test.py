@@ -6,12 +6,12 @@ import pysmu
 s = pysmu.Session()
 
 
-def write_all(v):
+def write_all(v, retries=3):
     for dev in s.devices:
         dev.channels["A"].write([v], cyclic=False)
 
     attempt = 0
-    for _ in range(3):
+    for _ in range(retries):
         print(f"Output on attempt {attempt}")
         try:
             for dev in s.devices:
@@ -27,20 +27,21 @@ def write_all(v):
 
 
 if __name__ == "__main__":
-    n = 100000
+    retries = 10
+    n = 99999
 
     expected_lengths = [n] * len(s.devices)
     total_times = []
     dropped_scans = []
-    for i in range(100):
+    for i in range(500):
         print(f"Scan {i}")
         t0 = time.time()
-        write_all(0)
+        write_all(0, retries)
         t1 = time.time()
         print(f"write time: {t1-t0} s")
 
         attempt = 0
-        for _ in range(3):
+        for _ in range(retries):
             print(f"Run on attempt {attempt}")
             try:
                 t2 = time.time()
@@ -50,11 +51,12 @@ if __name__ == "__main__":
                 break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
+                time.sleep(0.5)
 
             attempt += 1
 
-        if attempt == 3:
-            raise RuntimeError("Couldn't run scan after three attempts.")
+        if attempt == retries:
+            raise RuntimeError(f"Couldn't run scan after {retries} attempts.")
         else:
             t4 = time.time()
             # blocking indefinitely can cause program to hang, so just return
