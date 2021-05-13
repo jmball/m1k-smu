@@ -30,10 +30,11 @@ if __name__ == "__main__":
     n = 100000
 
     for i in range(100):
+        print(f"Scan {i}")
         t0 = time.time()
         write_all(0)
         t1 = time.time()
-        print(f"write time: {t1-t0} s\n")
+        print(f"write time: {t1-t0} s")
 
         attempt = 0
         for _ in range(3):
@@ -42,7 +43,7 @@ if __name__ == "__main__":
                 t2 = time.time()
                 s.run(n)
                 t3 = time.time()
-                print(f"run time: {t3-t2} s\n")
+                print(f"run time: {t3-t2} s")
                 break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
