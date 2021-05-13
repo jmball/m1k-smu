@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import warnings
 
@@ -66,7 +65,7 @@ for i, v in enumerate(vs):
     t3 = time.time()
     print(f"read time: {t3-t2} s")
     print(f"Data lengths: {[len(d) for d in data]}")
-    # removing the variable from memory at creating it again is faster than
+    # removing the variable from memory and creating it again is faster than
     # overwriting
     del data
     t4 = time.time()
@@ -74,6 +73,6 @@ for i, v in enumerate(vs):
 
 # end continuous mode
 if os.name == "nt":
-    sys.exit()
+    print("Finished! Press ctrl+C to close")
 else:
     s.end()

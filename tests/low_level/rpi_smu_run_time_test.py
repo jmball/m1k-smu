@@ -28,7 +28,7 @@ def write_all(v, retries=3):
 
 if __name__ == "__main__":
     retries = 10
-    n = 99999
+    n = 10000
 
     expected_lengths = [n] * len(s.devices)
     total_times = []
