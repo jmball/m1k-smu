@@ -62,7 +62,7 @@ for i, v in enumerate(vs):
     print(f"dummy read time: {t2-t1} s")
 
     # read data
-    data = s.read(2500, -1)
+    data = s.read(1800, -1)
     t3 = time.time()
     print(f"read time: {t3-t2} s")
     print(f"Data lengths: {[len(d) for d in data]}")
