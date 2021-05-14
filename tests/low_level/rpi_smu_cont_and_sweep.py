@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
                 # wait for writes to register
                 # without this delay voltage transitions will be captured in the read
-                time.sleep(0.05)
+                # time.sleep(0.05)
 
                 i = 0
                 while True:
@@ -151,7 +151,7 @@ if __name__ == "__main__":
                     for ix, dev in enumerate(devs):
                         dev.flush(-1, True)
 
-                    time.sleep(0.05)
+                    # time.sleep(0.05)
 
                     # measure a point to see if voltage has been reached
                     write_check = s.read(1)
@@ -176,7 +176,7 @@ if __name__ == "__main__":
                             break
 
                     i += 1
-                    # time.sleep(0.05)
+                    time.sleep(0.1)
 
                 # flush read buffers
                 for ix, dev in enumerate(devs):
