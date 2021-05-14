@@ -14,7 +14,7 @@ def write_all(vs, retries=3):
         dev.channels["B"].write(vs, cyclic=False)
 
     attempt = 0
-    for _ in range(retries):
+    for a in range(retries):
         print(f"Output on attempt {attempt}")
         try:
             for dev in s.devices:
@@ -49,19 +49,40 @@ if __name__ == "__main__":
     for i in range(scans):
         print(f"\nSCAN {i}\n------")
         v = random.random()
+
         attempt = 0
         for _ in range(retries):
             t0 = time.time()
             write_all([v] * n_sweep, retries)
             t1 = time.time()
             print(f"write time: {t1-t0} s")
-            print(f"Run on attempt {attempt}")
+
+            print(f"Run sweep attempt {attempt}")
             try:
                 t2 = time.time()
                 s.run(n_sweep)
                 t3 = time.time()
                 print(f"run time: {t3-t2} s")
-                break
+
+                t4 = time.time()
+                # blocking indefinitely can cause program to hang
+                data = s.read(n_sweep, 10000)
+                t5 = time.time()
+                print(f"read time: {t5-t4} s")
+                lengths = [len(d) for d in data]
+                print(f"Data lengths: {lengths}")
+                # removing the variable from memory and creating it again is faster than
+                # overwriting
+                del data
+                t6 = time.time()
+                print(f"Del time: {t6-t5} s")
+
+                sweep_total_times.append(t6 - t0)
+
+                if lengths != sweep_expected_lengths:
+                    sweep_dropped_scans.append(i)
+                else:
+                    break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
                 sweep_run_failures += 1
@@ -70,30 +91,12 @@ if __name__ == "__main__":
             attempt += 1
 
         if attempt == retries:
-            raise RuntimeError(f"Couldn't run scan after {retries} attempts.")
-        else:
-            t4 = time.time()
-            # blocking indefinitely can cause program to hang, so just return
-            # immediately
-            data = s.read(n_sweep, 10000)
-            t5 = time.time()
-            print(f"read time: {t5-t4} s")
-            lengths = [len(d) for d in data]
-            print(f"Data lengths: {lengths}")
-            # removing the variable from memory at creating it again is faster than
-            # overwriting
-            del data
-            t6 = time.time()
-            print(f"Del time: {t6-t5} s")
+            raise RuntimeError(f"Couldn't run sweep after {retries} attempts.")
 
-        sweep_total_times.append(t6 - t0)
+        # print metadata of scans to date
         m = sum(sweep_total_times) / len(sweep_total_times)
         print(f"mean time: {m} s")
-
-        if lengths != sweep_expected_lengths:
-            sweep_dropped_scans.append(i)
-        print(f"scans with dropped data: {sweep_dropped_scans}")
-
+        print(f"scans with retries: {sweep_dropped_scans}")
         print(f"Sweep run failures: {sweep_run_failures}")
 
         # start continuous mode
@@ -117,49 +120,57 @@ if __name__ == "__main__":
             )
 
         # wait for start to register
-        time.sleep(0.5)
+        while True:
+            if s.continuous is True:
+                break
 
         # run some measurements
-        for _ in range(cont_scans):
+        for scan in range(cont_scans):
             v = random.random()
-            print(f"\nVoltage {_ * i}: {v}")
+            print(f"\nVoltage {i * cont_scans + scan}: {v}")
 
-            # write voltages
-            t0 = time.time()
-            for dev in devs:
-                dev.channels["A"].write([v], cyclic=True)
-                dev.channels["B"].write([v], cyclic=True)
-            t1 = time.time()
-            print(f"write time: {t1-t0} s")
+            attempt = 0
+            for _ in range(retries):
+                print(f"Attempt: {attempt}")
+                # write voltages
+                t0 = time.time()
+                for dev in devs:
+                    dev.channels["A"].write([v], cyclic=True)
+                    dev.channels["B"].write([v], cyclic=True)
+                t1 = time.time()
+                print(f"write time: {t1-t0} s")
 
-            # wait for writes to register
-            time.sleep(0.25)
+                # wait for writes to register
+                # time.sleep(0.25)
 
-            # flush read buffers
-            for ix, dev in enumerate(devs):
-                dev.flush(-1, True)
-            t2 = time.time()
-            print(f"dummy read time: {t2-t1} s")
+                # flush read buffers
+                for ix, dev in enumerate(devs):
+                    dev.flush(-1, True)
+                t2 = time.time()
+                print(f"dummy read time: {t2-t1} s")
 
-            # read data
-            data = s.read(n_cont, 10000)
-            t3 = time.time()
-            print(f"read time: {t3-t2} s")
-            lengths = [len(d) for d in data]
-            print(f"Data lengths: {lengths}")
-            # removing the variable from memory and creating it again is faster than
-            # overwriting
-            del data
-            t4 = time.time()
-            print(f"Del time: {t4-t3} s")
+                # read data
+                data = s.read(n_cont, 10000)
+                t3 = time.time()
+                print(f"read time: {t3-t2} s")
+                lengths = [len(d) for d in data]
+                print(f"Data lengths: {lengths}")
+                # removing the variable from memory and creating it again is faster than
+                # overwriting
+                del data
+                t4 = time.time()
+                print(f"Del time: {t4-t3} s")
 
-            cont_total_times.append(t4 - t0)
-            m = sum(cont_total_times) / len(cont_total_times)
-            print(f"mean time: {m} s")
+                cont_total_times.append(t4 - t0)
+                m = sum(cont_total_times) / len(cont_total_times)
+                print(f"mean time: {m} s")
 
-            if lengths != cont_expected_lengths:
-                cont_dropped_scans.append([i, _])
-            print(f"scans with dropped data: {cont_dropped_scans}")
+                if lengths != cont_expected_lengths:
+                    cont_dropped_scans.append([i, scan])
+                else:
+                    # we got the amount of data expected so no need to retry
+                    print(f"scans with retries: {cont_dropped_scans}")
+                    break
 
         # attempt to end
         attempt = 0
