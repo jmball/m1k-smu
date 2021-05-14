@@ -46,7 +46,6 @@ if __name__ == "__main__":
     cont_dropped_scans = []
     cont_start_failures = 0
     cont_end_failures = 0
-    cont_unexpected_v = []
     for i in range(scans):
         print(f"\nSCAN {i}\n------")
         v = random.random()
@@ -190,18 +189,6 @@ if __name__ == "__main__":
                     # we got the amount of data expected so no need to retry
                     retry = False
 
-                    # validate voltage data is approximately right
-                    for ch, ch_data in enumerate(data):
-                        vsa = [
-                            (d[0][0] > v - 0.1) and (d[0][0] < v + 0.1) for d in ch_data
-                        ]
-                        vsb = [
-                            (d[1][0] > v - 0.1) and (d[1][0] < v + 0.1) for d in ch_data
-                        ]
-                        if (not all(vsa)) or (not all(vsb)):
-                            cont_unexpected_v.append([i, scan, attempt, ch])
-
-                    print(f"scans with unexpected voltage: {cont_unexpected_v}")
                     print(f"scans with retries: {cont_dropped_scans}")
 
                 # removing the variable from memory and creating it again is faster than
