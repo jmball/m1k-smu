@@ -46,6 +46,7 @@ if __name__ == "__main__":
     cont_dropped_scans = []
     cont_start_failures = 0
     cont_end_failures = 0
+    cont_unexpected_v = []
     for i in range(scans):
         print(f"\nSCAN {i}\n------")
         v = random.random()
@@ -126,7 +127,7 @@ if __name__ == "__main__":
 
         # run some measurements
         for scan in range(cont_scans):
-            v = random.random()
+            v = (0.5 * scans) % 5
             print(f"\nVoltage {i * cont_scans + scan}: {v}")
 
             attempt = 0
@@ -141,7 +142,8 @@ if __name__ == "__main__":
                 print(f"write time: {t1-t0} s")
 
                 # wait for writes to register
-                # time.sleep(0.25)
+                # without this delay voltage transitions will be captured in the read
+                time.sleep(0.25)
 
                 # flush read buffers
                 for ix, dev in enumerate(devs):
@@ -153,23 +155,43 @@ if __name__ == "__main__":
                 data = s.read(n_cont, 10000)
                 t3 = time.time()
                 print(f"read time: {t3-t2} s")
+
                 lengths = [len(d) for d in data]
-                print(f"Data lengths: {lengths}")
+                if lengths != cont_expected_lengths:
+                    # didn't get the data we need so retry
+                    retry = True
+
+                    cont_dropped_scans.append([i, scan])
+                    print(f"Data lengths: {lengths}")
+                else:
+                    # we got the amount of data expected so no need to retry
+                    retry = False
+
+                    # validate voltage data is approximately right
+                    for ch_data in data:
+                        vsa = [
+                            (d[0][0] > v - 0.1) and (d[0][0] < v + 0.1) for d in data
+                        ]
+                        vsb = [
+                            (d[1][0] > v - 0.1) and (d[1][0] < v + 0.1) for d in data
+                        ]
+                        if (not all(vsa)) or (not all(vsb)):
+                            cont_unexpected_v.append([i, scan, attempt])
+
+                    print(f"scans with unexpected voltage: {cont_unexpected_v}")
+                    print(f"scans with retries: {cont_dropped_scans}")
+
                 # removing the variable from memory and creating it again is faster than
                 # overwriting
-                del data
                 t4 = time.time()
-                print(f"Del time: {t4-t3} s")
-
-                cont_total_times.append(t4 - t0)
+                del data
+                t5 = time.time()
+                print(f"Del time: {t5-t4} s")
+                cont_total_times.append(t5 - t0)
                 m = sum(cont_total_times) / len(cont_total_times)
                 print(f"mean time: {m} s")
 
-                if lengths != cont_expected_lengths:
-                    cont_dropped_scans.append([i, scan])
-                else:
-                    # we got the amount of data expected so no need to retry
-                    print(f"scans with retries: {cont_dropped_scans}")
+                if retry is False:
                     break
 
         # attempt to end
