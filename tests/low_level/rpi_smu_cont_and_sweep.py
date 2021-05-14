@@ -40,19 +40,21 @@ if __name__ == "__main__":
     sweep_expected_lengths = [n_sweep] * len(s.devices)
     sweep_total_times = []
     sweep_dropped_scans = []
+    sweep_run_failures = 0
     cont_expected_lengths = [n_cont] * len(s.devices)
     cont_total_times = []
     cont_dropped_scans = []
+    cont_start_failures = 0
+    cont_end_failures = 0
     for i in range(scans):
         print(f"\nSCAN {i}\n------")
         v = random.random()
-        t0 = time.time()
-        write_all([v] * n_sweep, retries)
-        t1 = time.time()
-        print(f"write time: {t1-t0} s")
-
         attempt = 0
         for _ in range(retries):
+            t0 = time.time()
+            write_all([v] * n_sweep, retries)
+            t1 = time.time()
+            print(f"write time: {t1-t0} s")
             print(f"Run on attempt {attempt}")
             try:
                 t2 = time.time()
@@ -62,7 +64,8 @@ if __name__ == "__main__":
                 break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
-                time.sleep(0.5)
+                sweep_run_failures += 1
+                time.sleep(1)
 
             attempt += 1
 
@@ -91,6 +94,8 @@ if __name__ == "__main__":
             sweep_dropped_scans.append(i)
         print(f"scans with dropped data: {sweep_dropped_scans}")
 
+        print(f"Sweep run failures: {sweep_run_failures}")
+
         # start continuous mode
         print("\nStarting continuous mode...")
         attempt = 0
@@ -101,6 +106,8 @@ if __name__ == "__main__":
                 break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
+                cont_start_failures += 1
+                time.sleep(1)
 
             attempt += 1
 
@@ -154,8 +161,6 @@ if __name__ == "__main__":
                 cont_dropped_scans.append([i, _])
             print(f"scans with dropped data: {cont_dropped_scans}")
 
-        time.sleep(5)
-
         # attempt to end
         attempt = 0
         for _ in range(retries):
@@ -165,6 +170,8 @@ if __name__ == "__main__":
                 break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
+                cont_end_failures += 1
+                time.sleep(1)
 
             attempt += 1
 
@@ -172,3 +179,6 @@ if __name__ == "__main__":
             raise RuntimeError(
                 f"Couldn't end continuous mode after {retries} attempts."
             )
+
+        print(f"Continuous start failures: {cont_start_failures}")
+        print(f"Continuous end failures: {cont_end_failures}")
