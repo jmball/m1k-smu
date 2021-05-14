@@ -45,6 +45,8 @@ if __name__ == "__main__":
         for _ in range(retries):
             print(f"Run on attempt {attempt}")
             try:
+                for dev in s.devices:
+                    print(dev.serial)
                 t2 = time.time()
                 s.run(n)
                 t3 = time.time()
