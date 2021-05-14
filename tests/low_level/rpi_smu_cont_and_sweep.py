@@ -127,7 +127,7 @@ if __name__ == "__main__":
 
         # run some measurements
         for scan in range(cont_scans):
-            v = (0.5 * scans) % 5
+            v = (0.5 * scan) % 5
             print(f"\nVoltage {i * cont_scans + scan}: {v}")
 
             attempt = 0
@@ -193,6 +193,8 @@ if __name__ == "__main__":
 
                 if retry is False:
                     break
+
+                attempt += 1
 
         # attempt to end
         attempt = 0
