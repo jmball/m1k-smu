@@ -151,7 +151,7 @@ if __name__ == "__main__":
                     for ix, dev in enumerate(devs):
                         dev.flush(-1, True)
 
-                    # time.sleep(0.05)
+                    time.sleep(0.25)
 
                     # measure a point to see if voltage has been reached
                     write_check = s.read(1)
@@ -176,7 +176,6 @@ if __name__ == "__main__":
                             break
 
                     i += 1
-                    time.sleep(0.25)
 
                 # flush read buffers
                 for ix, dev in enumerate(devs):
