@@ -143,36 +143,38 @@ if __name__ == "__main__":
 
                 # wait for writes to register
                 # without this delay voltage transitions will be captured in the read
-                # time.sleep(0.25)
+                # time.sleep(0.05)
 
                 i = 0
                 while True:
+                    print(i)
                     # flush read buffers
                     for ix, dev in enumerate(devs):
                         dev.flush(-1, True)
 
                     # measure a point to see if voltage has been reached
                     write_check = s.read(1)
-                    print(write_check)
-                    time.sleep(60)
-                    ch_ready = []
-                    for ch, ch_data in enumerate(write_check):
-                        vsa = [
-                            (d[0][0] > v - 0.1) and (d[0][0] < v + 0.1) for d in ch_data
-                        ]
-                        vsb = [
-                            (d[1][0] > v - 0.1) and (d[1][0] < v + 0.1) for d in ch_data
-                        ]
 
-                        if (not all(vsa)) or (not all(vsb)):
-                            cont_unexpected_v.append([i, scan, attempt, ch])
+                    # check all channels returned data
+                    lens = [len(ch_data) > 0 for ch_data in write_check]
+                    if all(lens):
+                        # check if all channels at the right voltage
+                        dev_ready = []
+                        for ch, ch_data in enumerate(write_check):
+                            chA_ready = (ch_data[0][0][0] > v - 0.1) and (
+                                ch_data[0][0][0] < v + 0.1
+                            )
+                            chB_ready = (ch_data[0][1][0] > v - 0.1) and (
+                                ch_data[0][1][0] < v + 0.1
+                            )
+                            dev_ready.append(chA_ready and chB_ready)
 
-                    # if all(A_check) and all(B_check):
-                    #     print(f"write check: {i}")
-                    #     break
-                    # else:
-                    #     i += 1
-                    #     time.sleep(0.05)
+                        if all(dev_ready):
+                            print(f"write check: {i}")
+                            break
+
+                    i += 1
+                    time.sleep(0.05)
 
                 # flush read buffers
                 for ix, dev in enumerate(devs):
