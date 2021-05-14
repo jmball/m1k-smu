@@ -176,7 +176,7 @@ if __name__ == "__main__":
                             break
 
                     i += 1
-                    time.sleep(0.1)
+                    time.sleep(0.25)
 
                 # flush read buffers
                 for ix, dev in enumerate(devs):
