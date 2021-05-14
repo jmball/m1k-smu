@@ -142,7 +142,7 @@ if __name__ == "__main__":
                 print(f"write time: {t1-t0} s")
 
                 # check writes have registered by polling the output
-                i = 0
+                j = 0
                 while True:
                     # flush read buffers
                     for ix, dev in enumerate(devs):
@@ -169,7 +169,7 @@ if __name__ == "__main__":
                             print(f"write checks: {i}")
                             break
 
-                    i += 1
+                    j += 1
 
                 t2 = time.time()
                 print(f"write check time: {t2-t1} s")
