@@ -168,7 +168,7 @@ if __name__ == "__main__":
                     retry = False
 
                     # validate voltage data is approximately right
-                    for ch_data in data:
+                    for ch, ch_data in enumerate(data):
                         vsa = [
                             (d[0][0] > v - 0.1) and (d[0][0] < v + 0.1) for d in ch_data
                         ]
@@ -177,7 +177,7 @@ if __name__ == "__main__":
                         ]
                         print(ch_data[0][1][0])
                         if (not all(vsa)) or (not all(vsb)):
-                            cont_unexpected_v.append([i, scan, attempt])
+                            cont_unexpected_v.append([i, scan, attempt, ch])
 
                     print(f"scans with unexpected voltage: {cont_unexpected_v}")
                     print(f"scans with retries: {cont_dropped_scans}")
