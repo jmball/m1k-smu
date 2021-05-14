@@ -157,12 +157,12 @@ if __name__ == "__main__":
                 print(f"read time: {t3-t2} s")
 
                 lengths = [len(d) for d in data]
+                print(f"Data lengths: {lengths}")
                 if lengths != cont_expected_lengths:
                     # didn't get the data we need so retry
                     retry = True
 
                     cont_dropped_scans.append([i, scan])
-                    print(f"Data lengths: {lengths}")
                 else:
                     # we got the amount of data expected so no need to retry
                     retry = False
