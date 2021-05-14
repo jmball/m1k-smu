@@ -135,7 +135,7 @@ if __name__ == "__main__":
             print(f"dummy read time: {t2-t1} s")
 
             # read data
-            data = s.read(n_cont)
+            data = s.read(n_cont, 10000)
             t3 = time.time()
             print(f"read time: {t3-t2} s")
             lengths = [len(d) for d in data]
