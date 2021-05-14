@@ -166,7 +166,7 @@ if __name__ == "__main__":
                             dev_ready.append(chA_ready and chB_ready)
 
                         if all(dev_ready):
-                            print(f"write checks: {i}")
+                            print(f"write checks: {j}")
                             break
 
                     j += 1
