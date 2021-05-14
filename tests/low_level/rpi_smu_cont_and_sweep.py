@@ -154,7 +154,7 @@ if __name__ == "__main__":
                     time.sleep(0.25)
 
                     # measure a point to see if voltage has been reached
-                    write_check = s.read(1)
+                    write_check = s.read(1, 1000)
                     print(i, write_check)
 
                     # check all channels returned data
