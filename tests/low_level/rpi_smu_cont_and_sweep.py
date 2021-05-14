@@ -175,6 +175,7 @@ if __name__ == "__main__":
                         vsb = [
                             (d[1][0] > v - 0.1) and (d[1][0] < v + 0.1) for d in ch_data
                         ]
+                        print(ch_data[0][1][0])
                         if (not all(vsa)) or (not all(vsb)):
                             cont_unexpected_v.append([i, scan, attempt])
 
