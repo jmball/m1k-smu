@@ -47,7 +47,7 @@ if __name__ == "__main__":
         print(f"SCAN {i}\n------")
         v = random.random()
         t0 = time.time()
-        write_all([v] * n, retries)
+        write_all([v] * n_sweep, retries)
         t1 = time.time()
         print(f"write time: {t1-t0} s")
 
@@ -56,7 +56,7 @@ if __name__ == "__main__":
             print(f"Run on attempt {attempt}")
             try:
                 t2 = time.time()
-                s.run(n)
+                s.run(n_sweep)
                 t3 = time.time()
                 print(f"run time: {t3-t2} s")
                 break
@@ -72,7 +72,7 @@ if __name__ == "__main__":
             t4 = time.time()
             # blocking indefinitely can cause program to hang, so just return
             # immediately
-            data = s.read(n, 10000)
+            data = s.read(n_sweep, 10000)
             t5 = time.time()
             print(f"read time: {t5-t4} s")
             lengths = [len(d) for d in data]
