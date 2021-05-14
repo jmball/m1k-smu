@@ -170,10 +170,10 @@ if __name__ == "__main__":
                     # validate voltage data is approximately right
                     for ch_data in data:
                         vsa = [
-                            (d[0][0] > v - 0.1) and (d[0][0] < v + 0.1) for d in data
+                            (d[0][0] > v - 0.1) and (d[0][0] < v + 0.1) for d in ch_data
                         ]
                         vsb = [
-                            (d[1][0] > v - 0.1) and (d[1][0] < v + 0.1) for d in data
+                            (d[1][0] > v - 0.1) and (d[1][0] < v + 0.1) for d in ch_data
                         ]
                         if (not all(vsa)) or (not all(vsb)):
                             cont_unexpected_v.append([i, scan, attempt])
