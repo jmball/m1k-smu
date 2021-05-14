@@ -147,13 +147,13 @@ if __name__ == "__main__":
 
                 i = 0
                 while True:
-                    print(i)
                     # flush read buffers
                     for ix, dev in enumerate(devs):
                         dev.flush(-1, True)
 
                     # measure a point to see if voltage has been reached
                     write_check = s.read(1)
+                    print(i, write_check)
 
                     # check all channels returned data
                     lens = [len(ch_data) > 0 for ch_data in write_check]
