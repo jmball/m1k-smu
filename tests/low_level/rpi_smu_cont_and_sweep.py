@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
                 # wait for writes to register
                 # without this delay voltage transitions will be captured in the read
-                # time.sleep(0.05)
+                time.sleep(0.05)
 
                 i = 0
                 while True:
