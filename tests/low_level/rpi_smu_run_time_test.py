@@ -1,3 +1,4 @@
+import random
 import time
 import warnings
 
@@ -6,9 +7,10 @@ import pysmu
 s = pysmu.Session()
 
 
-def write_all(v, retries=3):
+def write_all(vs, retries=3):
     for dev in s.devices:
-        dev.channels["A"].write([v], cyclic=False)
+        dev.channels["A"].write(vs, cyclic=False)
+        dev.channels["B"].write(vs, cyclic=False)
 
     attempt = 0
     for _ in range(retries):
@@ -16,19 +18,20 @@ def write_all(v, retries=3):
         try:
             for dev in s.devices:
                 dev.channels["A"].mode = pysmu.Mode.SVMI
+                dev.channels["B"].mode = pysmu.Mode.SVMI
             break
         except pysmu.exceptions.DeviceError as e:
             warnings.warn(str(e))
 
         attempt += 1
 
-    if attempt == 3:
-        raise RuntimeError("Couldn't update output mode after three attempts.")
+    if attempt == retries:
+        raise RuntimeError(f"Couldn't update output mode after {retries} attempts.")
 
 
 if __name__ == "__main__":
     retries = 10
-    n = 10000
+    n = 100000
     scans = 2500
 
     expected_lengths = [n] * len(s.devices)
@@ -36,17 +39,15 @@ if __name__ == "__main__":
     dropped_scans = []
     for i in range(scans):
         print(f"Scan {i}")
-        t0 = time.time()
-        write_all(0, retries)
-        t1 = time.time()
-        print(f"write time: {t1-t0} s")
-
+        v = random.random()
         attempt = 0
         for _ in range(retries):
-            print(f"Run on attempt {attempt}")
+            t0 = time.time()
+            write_all([v] * n, retries)
+            t1 = time.time()
+            print(f"write time: {t1-t0} s")
+            print(f"Run attempt {attempt}")
             try:
-                for dev in s.devices:
-                    print(dev.serial)
                 t2 = time.time()
                 s.run(n)
                 t3 = time.time()
@@ -54,6 +55,7 @@ if __name__ == "__main__":
                 break
             except pysmu.exceptions.SessionError as e:
                 warnings.warn(str(e))
+                s.flush()
                 time.sleep(0.5)
 
             attempt += 1
@@ -64,12 +66,12 @@ if __name__ == "__main__":
             t4 = time.time()
             # blocking indefinitely can cause program to hang, so just return
             # immediately
-            data = s.read(n)
+            data = s.read(n, 10000)
             t5 = time.time()
             print(f"read time: {t5-t4} s")
             lengths = [len(d) for d in data]
             print(f"Data lengths: {lengths}")
-            # removing the variable from memory at creating it again is faster than
+            # removing the variable from memory and creating it again is faster than
             # overwriting
             del data
             t6 = time.time()

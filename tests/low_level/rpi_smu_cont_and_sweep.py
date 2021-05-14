@@ -115,7 +115,7 @@ if __name__ == "__main__":
         # run some measurements
         for _ in range(cont_scans):
             v = random.random()
-            print(f"\nVoltage {_}: {v}")
+            print(f"\nVoltage {_ * i}: {v}")
 
             # write voltages
             t0 = time.time()
@@ -155,4 +155,20 @@ if __name__ == "__main__":
             print(f"scans with dropped data: {cont_dropped_scans}")
 
         time.sleep(5)
-        s.end()
+
+        # attempt to end
+        attempt = 0
+        for _ in range(retries):
+            print(f"End attempt: {_}")
+            try:
+                s.end()
+                break
+            except pysmu.exceptions.SessionError as e:
+                warnings.warn(str(e))
+
+            attempt += 1
+
+        if attempt == retries:
+            raise RuntimeError(
+                f"Couldn't end continuous mode after {retries} attempts."
+            )
