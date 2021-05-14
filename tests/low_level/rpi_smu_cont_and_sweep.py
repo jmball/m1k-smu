@@ -141,19 +141,14 @@ if __name__ == "__main__":
                 t1 = time.time()
                 print(f"write time: {t1-t0} s")
 
-                # wait for writes to register
-                # without this delay voltage transitions will be captured in the read
-                # time.sleep(0.05)
-
-                i = 0
+                # check writes have registered by polling the output
                 while True:
                     # flush read buffers
                     for ix, dev in enumerate(devs):
                         dev.flush(-1, True)
 
-                    # measure a point to see if voltage has been reached
+                    # measure a data point
                     write_check = s.read(1, 1000)
-                    print(i, write_check)
 
                     # check all channels returned data
                     lens = [len(ch_data) > 0 for ch_data in write_check]
@@ -170,17 +165,10 @@ if __name__ == "__main__":
                             dev_ready.append(chA_ready and chB_ready)
 
                         if all(dev_ready):
-                            print(f"write check: {i}")
                             break
 
-                    i += 1
-                    time.sleep(0.05)
-
-                # flush read buffers
-                for ix, dev in enumerate(devs):
-                    dev.flush(-1, True)
                 t2 = time.time()
-                print(f"dummy read time: {t2-t1} s")
+                print(f"write check time: {t2-t1} s")
 
                 # read data
                 data = s.read(n_cont, 10000)
