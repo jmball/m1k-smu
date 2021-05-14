@@ -44,7 +44,7 @@ if __name__ == "__main__":
     cont_total_times = []
     cont_dropped_scans = []
     for i in range(scans):
-        print(f"SCAN {i}\n------")
+        print(f"\nSCAN {i}\n------")
         v = random.random()
         t0 = time.time()
         write_all([v] * n_sweep, retries)
@@ -135,7 +135,7 @@ if __name__ == "__main__":
             print(f"dummy read time: {t2-t1} s")
 
             # read data
-            data = s.read(n_cont, 1000)
+            data = s.read(n_cont)
             t3 = time.time()
             print(f"read time: {t3-t2} s")
             lengths = [len(d) for d in data]
