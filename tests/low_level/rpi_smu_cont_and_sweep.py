@@ -143,7 +143,32 @@ if __name__ == "__main__":
 
                 # wait for writes to register
                 # without this delay voltage transitions will be captured in the read
-                time.sleep(0.25)
+                # time.sleep(0.25)
+
+                i = 0
+                while True:
+                    # flush read buffers
+                    for ix, dev in enumerate(devs):
+                        dev.flush(-1, True)
+
+                    # measure a point to see if voltage has been reached
+                    write_check = s.read(1)
+                    A_check = []
+                    B_check = []
+                    for ch_d in write_check:
+                        A_check.append(
+                            (ch_d[0][0][0] > v - 0.05) and (ch_d[0][0][0] > v + 0.05)
+                        )
+                        B_check.append(
+                            (ch_d[0][1][0] > v - 0.05) and (ch_d[0][1][0] > v + 0.05)
+                        )
+
+                    if all(A_check) and all(B_check):
+                        print(f"write check: {i}")
+                        break
+                    else:
+                        i += 1
+                        time.sleep(0.05)
 
                 # flush read buffers
                 for ix, dev in enumerate(devs):
