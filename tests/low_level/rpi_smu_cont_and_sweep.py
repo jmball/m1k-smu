@@ -81,7 +81,7 @@ if __name__ == "__main__":
             # overwriting
             del data
             t6 = time.time()
-            print(f"Del time: {t6-t5} s\n")
+            print(f"Del time: {t6-t5} s")
 
         sweep_total_times.append(t6 - t0)
         m = sum(sweep_total_times) / len(sweep_total_times)
@@ -110,12 +110,12 @@ if __name__ == "__main__":
             )
 
         # wait for start to register
-        time.sleep(0.25)
+        time.sleep(0.5)
 
         # run some measurements
         for _ in range(cont_scans):
             v = random.random()
-            print(f"\nVoltage: {v}")
+            print(f"\nVoltage {_}: {v}")
 
             # write voltages
             t0 = time.time()
@@ -144,14 +144,15 @@ if __name__ == "__main__":
             # overwriting
             del data
             t4 = time.time()
-            print(f"Del time: {t4-t3} s\n")
+            print(f"Del time: {t4-t3} s")
 
             cont_total_times.append(t4 - t0)
             m = sum(cont_total_times) / len(cont_total_times)
             print(f"mean time: {m} s")
 
             if lengths != cont_expected_lengths:
-                cont_dropped_scans.append(i)
+                cont_dropped_scans.append([i, _])
             print(f"scans with dropped data: {cont_dropped_scans}")
 
+        time.sleep(5)
         s.end()
