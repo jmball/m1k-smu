@@ -19,10 +19,11 @@ class smu:
     the program/s to crash. An smu object must therefore only be instantiated once in
     an application.
 
-    Each ADALM1000 device has two channels internally but this class uses the device as
-    a single SMU channel with a four-wire measurement mode. Channel A is the master.
-    Channel B (BIN input) is only used for voltage sensing on the GND side of the
-    device under test.
+    Each ADALM1000 device has two channels internally, each with a third sense wire.
+    This class can use the device in that mode but additionally provides the option to
+    operate as a single SMU channel with a four-wire measurement mode. In this mode
+    Channel A is the master. Channel B (BIN input) is used for voltage sensing on the
+    GND side of the device under test.
 
     Each device can be configured for two quadrant operation with a 0-5 V range
     (channel A LO connected to ground), or for four quadrant operation with a
@@ -33,15 +34,26 @@ class smu:
     However, different DC output values can be configured/measured for each channel.
     """
 
-    def __init__(self, plf=50):
+    def __init__(self, plf=50, ch_per_board=2):
         """Initialise object.
 
         Parameters
         ----------
-        plf : numeric
+        plf : float or int
             Power line frequency (Hz).
+        ch_per_board : {1, 2}
+            Number of channels to use per ADALM1000 board. If 1, channel A is assumed
+            as the channel to use. This cannot be changed once the object has been
+            instantiated.
         """
         self.plf = plf
+
+        if ch_per_board in [1, 2]:
+            self._ch_per_board = ch_per_board
+        else:
+            raise ValueError(
+                f"Invalid number of channels per board: {ch_per_board}. Must be 1 or 2."
+            )
 
         # Init private containers for settings, which get populated on device
         # connection. Call the settings property to read settings. Use configure
@@ -79,6 +91,81 @@ class smu:
         # a crash
         del self._session
 
+    @property
+    def ch_per_board(self):
+        """Get the number of channels per board in use."""
+        return self._ch_per_board
+
+    @property
+    def maximum_buffer_size(self):
+        """Maximum number of samples in write/run/read buffers."""
+        return self._maximum_buffer_size
+
+    @property
+    def num_channels(self):
+        """Get the number of connected SMU channels."""
+        return self._num_channels
+
+    @property
+    def num_devices(self):
+        """Get the number of connected SMU boards."""
+        return self._num_devices
+
+    @property
+    def sample_rate(self):
+        """Get the raw sample rate for each device."""
+        return self._sample_rate
+
+    @property
+    def channel_settings(self):
+        """Get settings dictionary."""
+        return self._channel_settings
+
+    @property
+    def nplc(self):
+        """Integration time in number of power line cycles."""
+        return self._nplc
+
+    @nplc.setter
+    def nplc(self, nplc):
+        """Set the integration time in number of power line cycles.
+
+        Parameters
+        ----------
+        nplc : float
+            Integration time in number of power line cycles (NPLC).
+        """
+        self._nplc = nplc
+
+        # convert nplc to integration time
+        nplc_time = (1 / self.plf) * nplc
+
+        self._nplc_samples = int(nplc_time * self._sample_rate)
+
+        # update total samples for each data point
+        self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
+
+    @property
+    def settling_delay(self):
+        """Settling delay in seconds."""
+        return self._settling_delay
+
+    @settling_delay.setter
+    def settling_delay(self, settling_delay):
+        """Set the settling delay in seconds.
+
+        Parameters
+        ----------
+        settling_delay : float
+            Settling delay (s).
+        """
+        self._settling_delay = settling_delay
+
+        self._settling_delay_samples = int(settling_delay * self._sample_rate)
+
+        # update total samples for each data point
+        self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
+
     def connect(self, serials=None):
         """Connect one or more devices (channels) to the session (SMU).
 
@@ -111,8 +198,17 @@ class smu:
         for serial in serials:
             self._connect(serial)
 
+        # make a list of serials corresponding to every SMU channel, i.e. if using
+        # 2 channels per board, 2 channels will share the same serial
+        ch_serials = []
+        for serial in serials:
+            if self.ch_per_board == 1:
+                ch_serials += [serial]
+            elif self.ch_per_board == 2:
+                ch_serials += [serial, serial]
+
         # find device index for each channel and init channel settings
-        for ch, serial in enumerate(serials):
+        for ch, serial in enumerate(ch_serials):
             dev_ix = None
             for ix, dev in enumerate(self._session.devices):
                 if dev.serial == serial:
@@ -126,17 +222,31 @@ class smu:
             self._channel_settings[ch]["dev_ix"] = dev_ix
             self._channel_settings[ch]["serial"] = serial
 
+            # store individual device channel
+            if self.ch_per_board == 1:
+                self.channel_settings[ch]["dev_channel"] = "A"
+            elif self.ch_per_board == 2:
+                if ch % 2 == 0:
+                    self.channel_settings[ch]["dev_channel"] = "A"
+                else:
+                    self.channel_settings[ch]["dev_channel"] = "B"
+
             # disable output (should already be disabled but just to make sure)
             self.enable_output(False, ch)
 
-            # channel B is only used for voltage measurement in four wire mode
-            self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
+            if self.ch_per_board == 1:
+                # channel B is only used for voltage measurement in four wire mode
+                self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
 
         ### the order of actions below is critical ####
 
         # cache session settings for functions that might need them during a continuous
         # session, when they can't be accessed.
-        self._num_channels = len(self._session.devices)
+        self._num_boards = len(self._session.devices)
+        if self.ch_per_board == 1:
+            self._num_channels = self._num_boards
+        elif self.ch_per_board == 2:
+            self._num_channels = 2 * self._num_boards
 
         # set default output value
         # this will reset all channel outputs to 0 V
@@ -150,7 +260,7 @@ class smu:
         # depends on session being created and device being connected and a
         # measurement having been performed to properly init sample rate
         if self._nplc is None:
-            self.nplc = 1
+            self.nplc = 0.1
 
         if self._settling_delay is None:
             self.settling_delay = 0.005
@@ -316,71 +426,6 @@ class smu:
         for channel in channels:
             self._channel_settings[channel]["calibration_mode"] = "internal"
 
-    @property
-    def maximum_buffer_size(self):
-        """Maximum number of samples in write/run/read buffers."""
-        return self._maximum_buffer_size
-
-    @property
-    def num_channels(self):
-        """Get the number of connected SMU channels."""
-        return self._num_channels
-
-    @property
-    def sample_rate(self):
-        """Get the raw sample rate for each device."""
-        return self._sample_rate
-
-    @property
-    def channel_settings(self):
-        """Get settings dictionary."""
-        return self._channel_settings
-
-    @property
-    def nplc(self):
-        """Integration time in number of power line cycles."""
-        return self._nplc
-
-    @nplc.setter
-    def nplc(self, nplc):
-        """Set the integration time in number of power line cycles.
-
-        Parameters
-        ----------
-        nplc : float
-            Integration time in number of power line cycles (NPLC).
-        """
-        self._nplc = nplc
-
-        # convert nplc to integration time
-        nplc_time = (1 / self.plf) * nplc
-
-        self._nplc_samples = int(nplc_time * self._sample_rate)
-
-        # update total samples for each data point
-        self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
-
-    @property
-    def settling_delay(self):
-        """Settling delay in seconds."""
-        return self._settling_delay
-
-    @settling_delay.setter
-    def settling_delay(self, settling_delay):
-        """Set the settling delay in seconds.
-
-        Parameters
-        ----------
-        settling_delay : float
-            Settling delay (s).
-        """
-        self._settling_delay = settling_delay
-
-        self._settling_delay_samples = int(settling_delay * self._sample_rate)
-
-        # update total samples for each data point
-        self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
-
     def configure_channel_settings(
         self,
         channel=None,
@@ -399,7 +444,7 @@ class smu:
             Automatically set output to high impedance mode after a measurement.
         four_wire : bool
             Four wire enabled.
-        v_range : float
+        v_range : {2.5, 5}
             Voltage range (5 or 2.5). If 5, channel can output 0-5 V (two quadrant), if
             2.5 channel can output -2.5 - +2.5 V (four quadrant).
         default : bool
@@ -441,6 +486,7 @@ class smu:
         self._channel_settings[channel] = {
             "serial": None,
             "dev_ix": None,
+            "dev_channel": None,
             "auto_off": False,
             "four_wire": True,
             "v_range": 5,
@@ -489,7 +535,8 @@ class smu:
 
             # update set values according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
-                cal = self._channel_settings[ch]["external_calibration"]["A"]
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
                 f_int = cal[f"source_{source_mode}"]["set"]
                 values = f_int(values).tolist()
 
@@ -542,7 +589,8 @@ class smu:
 
             # update set value according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
-                cal = self._channel_settings[ch]["external_calibration"]["A"]
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
                 f_int = cal[f"source_{source_mode}"]["set"]
                 value = float(f_int(value))
 
@@ -557,6 +605,7 @@ class smu:
         """Configure/update the DC output when already in continuous mode."""
         for ch in range(self.num_channels):
             dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
 
             values = self._channel_settings[ch]["dc_values"]
 
@@ -564,7 +613,7 @@ class smu:
             self._session.devices[dev_ix].read(self.maximum_buffer_size)
 
             # write new values
-            self._session.devices[dev_ix].channels["A"].write(values)
+            self._session.devices[dev_ix].channels[dev_channel].write(values)
 
     def _configure_dc_noncontinuous(self):
         """Configure/update the DC output when already in non-continuous mode."""
@@ -572,20 +621,22 @@ class smu:
         start_modes = []
         for ch in range(self.num_channels):
             dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
             # get current mode to determine whether output needs to be re-enabled
-            start_modes.append(self._session.devices[dev_ix].channels["A"].mode)
+            start_modes.append(self._session.devices[dev_ix].channels[dev_channel].mode)
 
             values = self._channel_settings[ch]["dc_values"]
 
             # write new value to the channel
             self._session.devices[dev_ix].flush(channel=0, read=True)
-            self._session.devices[dev_ix].channels["A"].write(values)
+            self._session.devices[dev_ix].channels[dev_channel].write(values)
 
         # enable outputs prior to run-read as required to update the device value
         # doing this in a separate loop after the writes minimises the time the
         # outputs are enabled before the run, which triggers the change in outputs
         for ch in range(len(values)):
             dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
             source_mode = self._channel_settings[ch]["source_mode"]
             if self._channel_settings[ch]["four_wire"] is True:
                 if source_mode == "v":
@@ -597,7 +648,7 @@ class smu:
                     mode = pysmu.Mode.SVMI
                 else:
                     mode = pysmu.Mode.SIMV
-            self._session.devices[dev_ix].channels["A"].mode = mode
+            self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
         # run and read one sample for all channels to update output values
         self._session.get_samples(1)
@@ -700,8 +751,11 @@ class smu:
 
             # write initial data
             for ch in channels:
+                dev_channel = self._channel_settings[ch]["dev_channel"]
                 values = self._channel_settings[ch]["dc_values"]
-                self._session.devices[ch].channels["A"].write(values, cyclic=True)
+                self._session.devices[ch].channels[dev_channel].write(
+                    values, cyclic=True
+                )
 
         # read data
         t0 = time.time()
@@ -810,15 +864,18 @@ class smu:
                 self._session.flush()
                 for ch in channels:
                     dev_ix = self._channel_settings[ch]["dev_ix"]
+                    dev_channel = self._channel_settings[ch]["dev_channel"]
                     samples = ch_samples[ch]
                     if scan == 1:
                         # this is the second scan of a dual sweep so reverse sample list
                         samples.reverse()
                     chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
-                    self._session.devices[dev_ix].channels["A"].write(chunk)
+                    self._session.devices[dev_ix].channels[dev_channel].write(chunk)
 
                 # enable outputs
                 for ch in channels:
+                    dev_ix = self._channel_settings[ch]["dev_ix"]
+                    dev_channel = self._channel_settings[ch]["dev_channel"]
                     # determine if request is for special case of open-circuit voltage
                     # measurement requiring HI_Z mode rather than SIMV
                     if (
@@ -831,7 +888,7 @@ class smu:
                         else:
                             mode = pysmu.Mode.HI_Z
 
-                        self._session.devices[dev_ix].channels["A"].mode = mode
+                        self._session.devices[dev_ix].channels[dev_channel].mode = mode
                     else:
                         # not a special case so just enable output as normal
                         self.enable_output(True, ch)
@@ -880,6 +937,8 @@ class smu:
 
         processed_data = {}
         for ch in range(self.num_channels):
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+
             # start indices for each measurement value
             start_ixs = range(0, len(raw_data[ch]), self._samples_per_datum)
 
@@ -911,28 +970,29 @@ class smu:
 
             # update measured values according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
-                A_cal = self._channel_settings[ch]["external_calibration"]["A"]
+                if self.ch_per_board == 1:
+                    A_cal = self._channel_settings[ch]["external_calibration"]["A"]
 
-                source_mode = self._channel_settings[ch]["source_mode"]
-                if source_mode == "v":
-                    f_int_mva = A_cal["source_v"]["meas"]
-                    f_int_mia = A_cal["meas_i"]
-                else:
-                    f_int_mva = A_cal["meas_v"]
-                    f_int_mia = A_cal["source_i"]["meas"]
+                    source_mode = self._channel_settings[ch]["source_mode"]
+                    if source_mode == "v":
+                        f_int_mva = A_cal["source_v"]["meas"]
+                        f_int_mia = A_cal["meas_i"]
+                    else:
+                        f_int_mva = A_cal["meas_v"]
+                        f_int_mia = A_cal["source_i"]["meas"]
 
-                A_voltages = f_int_mva(A_voltages)
-                currents = f_int_mia(currents).tolist()
+                    A_voltages = f_int_mva(A_voltages)
+                    currents = f_int_mia(currents).tolist()
 
-                if self._channel_settings[ch]["four_wire"] is True:
-                    B_cal = self._channel_settings[ch]["external_calibration"]["B"]
-                    f_int_mvb = B_cal["meas_v"]
-                    B_voltages = f_int_mvb(B_voltages)
-                    voltages = A_voltages - B_voltages
-                else:
-                    voltages = A_voltages
+                    if self._channel_settings[ch]["four_wire"] is True:
+                        B_cal = self._channel_settings[ch]["external_calibration"]["B"]
+                        f_int_mvb = B_cal["meas_v"]
+                        B_voltages = f_int_mvb(B_voltages)
+                        voltages = A_voltages - B_voltages
+                    else:
+                        voltages = A_voltages
 
-                voltages = voltages.tolist()
+                    voltages = voltages.tolist()
             else:
                 if self._channel_settings[ch]["four_wire"] is True:
                     voltages = [av - bv for av, bv in zip(A_voltages, B_voltages)]
@@ -970,6 +1030,7 @@ class smu:
 
         for ch in channels:
             dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
             if enable is True:
                 if self._channel_settings[ch]["four_wire"] is True:
                     if self._channel_settings[ch]["source_mode"] == "v":
@@ -987,9 +1048,26 @@ class smu:
                     mode = pysmu.Mode.HI_Z_SPLIT
                 else:
                     mode = pysmu.Mode.HI_Z
-                self.set_leds(channel=ch, G=True)
 
-            self._session.devices[dev_ix].channels["A"].mode = mode
+                # if both channels on a board are accessible, only turn off the blue
+                # LED if both channels are off
+                if self.ch_per_board == 1:
+                    self.set_leds(channel=ch, G=True)
+                elif self.ch_per_board == 2:
+                    if dev_channel == "A":
+                        other_channel_mode = (
+                            self._session.devices[dev_ix].channels["B"].mode
+                        )
+                    else:
+                        other_channel_mode = (
+                            self._session.devices[dev_ix].channels["A"].mode
+                        )
+
+                    if other_channel_mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                        # the other channel is off so ok to turn off blue LED
+                        self.set_leds(channel=ch, G=True)
+
+            self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
     def get_channel_id(self, channel):
         """Get the serial number of requested channel.
