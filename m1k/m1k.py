@@ -104,17 +104,20 @@ class smu:
     @property
     def num_channels(self):
         """Get the number of connected SMU channels."""
-        return self._num_channels
+        if self.ch_per_board == 1:
+            return self.num_boards
+        elif self.ch_per_board == 2:
+            return 2 * self.num_boards
 
     @property
     def num_boards(self):
         """Get the number of connected SMU boards."""
-        return self._num_boards
+        return len(self._session.devices)
 
     @property
     def sample_rate(self):
         """Get the raw sample rate for each device."""
-        return self._sample_rate
+        return self._session.sample_rate
 
     @property
     def channel_settings(self):
@@ -140,7 +143,7 @@ class smu:
         # convert nplc to integration time
         nplc_time = (1 / self.plf) * nplc
 
-        self._nplc_samples = int(nplc_time * self._sample_rate)
+        self._nplc_samples = int(nplc_time * self.sample_rate)
 
         # update total samples for each data point
         self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
@@ -161,7 +164,7 @@ class smu:
         """
         self._settling_delay = settling_delay
 
-        self._settling_delay_samples = int(settling_delay * self._sample_rate)
+        self._settling_delay_samples = int(settling_delay * self.sample_rate)
 
         # update total samples for each data point
         self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
@@ -243,21 +246,9 @@ class smu:
 
         ### the order of actions below is critical ####
 
-        # cache session settings for functions that might need them during a continuous
-        # session, when they can't be accessed.
-        self._num_boards = len(self._session.devices)
-        if self.ch_per_board == 1:
-            self._num_channels = self._num_boards
-        elif self.ch_per_board == 2:
-            self._num_channels = 2 * self._num_boards
-
         # set default output value
         # this will reset all channel outputs to 0 V
         self.configure_dc(values=0, source_mode="v")
-
-        # cache session settings for functions that might need them during a continuous
-        # session, when they can't be accessed.
-        self._sample_rate = self._session.sample_rate
 
         # init global settings if not already set
         # depends on session being created and device being connected and a
@@ -598,27 +589,6 @@ class smu:
 
             self._channel_settings[ch]["dc_values"] = [value]
 
-        if self._session.continuous is True:
-            self._configure_dc_continuous()
-        else:
-            self._configure_dc_noncontinuous()
-
-    def _configure_dc_continuous(self):
-        """Configure/update the DC output when already in continuous mode."""
-        for ch in range(self.num_channels):
-            dev_ix = self._channel_settings[ch]["dev_ix"]
-            dev_channel = self._channel_settings[ch]["dev_channel"]
-
-            values = self._channel_settings[ch]["dc_values"]
-
-            # read the existing buffer to clear the way for new writes
-            self._session.devices[dev_ix].read(self.maximum_buffer_size)
-
-            # write new values
-            self._session.devices[dev_ix].channels[dev_channel].write(values)
-
-    def _configure_dc_noncontinuous(self):
-        """Configure/update the DC output when already in non-continuous mode."""
         # write values for all channels
         start_modes = []
         for ch in range(self.num_channels):
@@ -666,7 +636,7 @@ class smu:
                 # here
                 self.enable_output(False, ch)
 
-    def measure(self, measurement="dc", allow_chunking=False, dc_continuous=False):
+    def measure(self, measurement="dc", allow_chunking=False):
         """Perform the configured sweep or dc measurements for all channels.
 
         Parameters
@@ -680,16 +650,6 @@ class smu:
             device buffer this flag will determine whether it gets broken up into
             smaller measurement chunks. If set to `False` and the measurement exceeds
             the buffer size this function will raise a ValueError.
-        dc_continuous : bool
-            If `True`, run DC measurements in continuous mode. This is useful when the
-            channel outputs need to stay on between measurements without interuption
-            but comes at the cost of longer measurement times because the whole sample
-            buffer must fill and be read (twice) each time. If `False`, the
-            measurements run in non-continuous mode where the output automatically
-            turns off after a reading. When "auto-off" is disabled, the output will
-            be turned on again after a 3-4 ms delay. If this off time is not important
-            this measurement mode has the advantage of enabling shorter measurement
-            times, measuring exactly what's required.
 
         Returns
         -------
@@ -702,24 +662,7 @@ class smu:
                 f"Invalid measurement mode: {measurement}. Must be 'dc' or 'sweep'."
             )
 
-        if self._session.continuous is True:
-            if measurement != "dc":
-                warnings.warn(
-                    f"Cannot perform {measurement} measurement while in continuous "
-                    + "mode. Disable the output to end continuous mode then try again."
-                )
-                return
-
-            if dc_continuous is False:
-                self._session.end()
-                raw_data, t0 = self._measure_noncontinuous(measurement, allow_chunking)
-            else:
-                raw_data, t0 = self._measure_continuous()
-        else:
-            if (measurement == "dc") and (dc_continuous is True):
-                raw_data, t0 = self._measure_continuous()
-            else:
-                raw_data, t0 = self._measure_noncontinuous(measurement, allow_chunking)
+        raw_data, t0 = self._measure(measurement, allow_chunking)
 
         # re-format raw data to: (voltage, current, timestamp, status)
         # and process to account for nplc and settling delay if required
@@ -728,51 +671,8 @@ class smu:
         # return processed_data
         return processed_data
 
-    def _measure_continuous(self):
-        """Perform a DC measurement in continuous mode.
-
-        Returns
-        -------
-        raw_data : dict
-            Raw data dictionary.
-        t0 : float
-            Reading start time in s.
-        """
-        channels = range(self.num_channels)
-
-        # setup continuous session if not already
-        if self._session.continuous is False:
-            # flush the buffers
-            self._session.flush()
-
-            # turn on all outputs
-            self.enable_output(True)
-
-            # start continuous session
-            self._session.start(0)
-
-            # write initial data
-            for ch in channels:
-                dev_channel = self._channel_settings[ch]["dev_channel"]
-                values = self._channel_settings[ch]["dc_values"]
-                self._session.devices[ch].channels[dev_channel].write(
-                    values, cyclic=True
-                )
-
-        # read data
-        t0 = time.time()
-        raw_data = {}
-        for ch in channels:
-            # read all data in the buffer
-            buffer_data = self._session.devices[ch].read(self._maximum_buffer_size, -1)
-
-            # take the last bit as the measurement
-            raw_data[ch] = buffer_data[-self._samples_per_datum :]
-
-        return raw_data, t0
-
-    def _measure_noncontinuous(self, measurement, allow_chunking):
-        """Perform a DC or sweep measurement in non-continuous mode.
+    def _measure(self, measurement, allow_chunking):
+        """Perform a DC or sweep measurement.
 
         Parameters
         ----------
@@ -935,7 +835,7 @@ class smu:
             List of processed data tuples. Tuple structure is: (voltage, current,
             timestamp, status).
         """
-        t_delta = 1 / self._sample_rate
+        t_delta = 1 / self.sample_rate
 
         processed_data = {}
         for ch in range(self.num_channels):
@@ -1021,14 +921,6 @@ class smu:
         channel : int or None
             Channel number (0-indexed). If `None`, apply to all channels.
         """
-        if self._session.continuous is True:
-            if enable is False:
-                # must end continuous session before turning off output
-                self._session.end()
-            else:
-                # in a continuous session so output must be on already
-                return
-
         if channel is None:
             channels = range(self.num_channels)
         else:
@@ -1088,12 +980,8 @@ class smu:
         channel_serial : str
             Channel serial string.
         """
-        if self._session.continuous is True:
-            # can't query devices so use cached serial
-            return self._channel_settings[channel]["serial"]
-        else:
-            dev_ix = self._channel_settings[channel]["dev_ix"]
-            return self._session.devices[dev_ix].serial
+        dev_ix = self._channel_settings[channel]["dev_ix"]
+        return self._session.devices[dev_ix].serial
 
     def set_leds(self, channel=None, R=False, G=False, B=False):
         """Set LED configuration for a channel(s).
@@ -1109,14 +997,6 @@ class smu:
         B : bool
             Turn on (True) or off (False) the blue LED.
         """
-        # can't update leds during a continuous session
-        if self._session.continuous is True:
-            warnings.warn(
-                "Can't set LEDs during a continuous session. Disable all channel "
-                + "outputs to end the continuous session and then try again."
-            )
-            return
-
         setting = int("".join([str(int(s)) for s in [B, G, R]]), 2)
 
         if channel is None:
