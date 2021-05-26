@@ -544,10 +544,10 @@ class smu:
         Parameters
         ----------
         values : list of lists
-            Lists of values for source sweeps, one sub-list for for each channel. The
+            Lists of values for source sweeps, one sub-list for each channel. The
             outer list index is the channel index, e.g. passing
             `[[0, 1, 2], [0, 1, 2]]` will sweep both channels 0 and 1 with values of
-            `[0, 1, 2]`.
+            `[0, 1, 2]`. All sub-lists must be the same length.
         dual : bool
             If `True`, append the reverse sweep as well.
         source_mode : str
@@ -561,8 +561,16 @@ class smu:
 
         if len(values) != self.num_channels:
             raise ValueError(
-                f"Invalid valuesl ist length: {len(values)}. The length of the values "
+                f"Invalid values list length: {len(values)}. The length of the values "
                 + f"list must match the number of channels: {self.num_channels}."
+            )
+
+        # make sure all sub-lists have equal legnth
+        unique_sublist_lengths = set([len(sublist) for sublist in values])
+        if len(unique_sublist_lengths) != 1:
+            raise ValueError(
+                "All sub-lists in `values` must be the same length. `values` contains "
+                + f"sub-lists with lengths: {unique_sublist_lengths}."
             )
 
         for ch in range(self.num_channels):
@@ -796,19 +804,16 @@ class smu:
                 self._channel_settings[ch]["source_mode"] = sweep_mode
 
         # determine how many scans to perform, i.e. is this a dual sweep?
+        num_scans = 1
         if measurement == "sweep":
             # all channels have the same dual sweep setting so just look up the 1st
             if self._channel_settings[0]["dual_sweep"] is True:
                 num_scans = 2
-            else:
-                num_scans = 1
-        else:
-            num_scans = 1
 
         # init data container
         # TODO: make more accurate sample timer
         t0 = time.time()
-        raw_data = {}
+        raw_data = []
         for scan in range(num_scans):
             # iterate over chunks of data that fit into the buffer
             for i in range(num_chunks):
@@ -848,16 +853,8 @@ class smu:
                 # run scans
                 self._session.run(len(chunk))
 
-                # read the data chunks and add to raw data container
-                for ch in channels:
-                    dev_ix = self._channel_settings[ch]["dev_ix"]
-                    data = self._session.devices[dev_ix].read(len(chunk), -1)
-                    try:
-                        # add new chunk to previous data
-                        raw_data[ch].extend(data)
-                    except KeyError:
-                        # no previous chunks so create key-value pair
-                        raw_data[ch] = data
+                # read the data chunk and add to raw data container
+                raw_data.append(self._session.read(len(chunk), 20000))
 
         # re-enable outputs if required
         for ch in channels:
