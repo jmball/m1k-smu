@@ -107,9 +107,9 @@ class smu:
         return self._num_channels
 
     @property
-    def num_devices(self):
+    def num_boards(self):
         """Get the number of connected SMU boards."""
-        return self._num_devices
+        return self._num_boards
 
     @property
     def sample_rate(self):
@@ -169,21 +169,24 @@ class smu:
     def connect(self, serials=None):
         """Connect one or more devices (channels) to the session (SMU).
 
-        WARNING: this method should only be called once! Unexpected channel numbering
-        will result if devices are added later.
+        WARNING: this method can only be called once!
 
         Parameters
         ----------
         serials : str, list, or None
-            List of device serial numbers to add to the session. If there are currently
-            no devices in the session then the index of the device serial in the list
-            will be its channel index. If a single serial is given it will be assigned
-            the next available channel index. If `None`, add all available devices.
+            List of device serial numbers to add to the session. The order of the
+            serials in the list determines their channel number. The list index will be
+            the channel index if `ch_per_board` is 1. Otherwise two channel indices
+            will be added per list index, given as `2 * list index` and
+            `2 * list index + 1`. If `None`, connect all available devices, assigning
+            channel indices in the order determined by pysmu.
         """
         if self._session is None:
             # the session wasn't provided and no session already exists so create one
             self._session = pysmu.Session(add_all=False)
             self._session.scan()
+        else:
+            raise RuntimeError("The connect method may only be called once.")
 
         if serials is None:
             serials = [dev.serial for dev in self._session.available_devices]
@@ -293,7 +296,6 @@ class smu:
                 return
 
         # it looks like a new device so add it
-        # it will get prepended to the session's device list
         self._session.add(new_dev)
 
     def disconnect(self):
@@ -345,8 +347,8 @@ class smu:
 
             where the keys "A" and "B" refer to device channels and [data] values are
             lists of lists of measurement data. For "meas_[x]" keys the format of
-            the sub-lists is [dmm_meas, mk1_meas], for "source_[x]" keys the format of
-            the sub-lists is [set, mk1_meas, dmm_meas].
+            the sub-lists is [dmm_meas, m1k_meas], for "source_[x]" keys the format of
+            the sub-lists is [set, m1k_meas, dmm_meas].
 
             If `None`, use calibration data already provided.
         """
@@ -445,8 +447,8 @@ class smu:
         four_wire : bool
             Four wire enabled.
         v_range : {2.5, 5}
-            Voltage range (5 or 2.5). If 5, channel can output 0-5 V (two quadrant), if
-            2.5 channel can output -2.5 - +2.5 V (four quadrant).
+            Voltage range. If 5, channel can output 0-5 V (two quadrant). If 2.5
+            channel can output -2.5 - +2.5 V (four quadrant).
         default : bool
             Reset all settings to default.
         """
@@ -945,7 +947,8 @@ class smu:
             timestamps = []
             A_voltages = []
             B_voltages = []
-            currents = []
+            A_currents = []
+            B_currents = []
             for i in start_ixs:
                 # final point can overlap with start of next voltage so cut it
                 data_slice = raw_data[ch][i : i + self._samples_per_datum - 1]
@@ -959,14 +962,17 @@ class smu:
                 A_point_voltages = []
                 B_point_voltages = []
                 A_point_currents = []
+                B_point_currents = []
                 for row in data_slice:
                     A_point_voltages.append(row[0][0])
                     B_point_voltages.append(row[1][0])
                     A_point_currents.append(row[0][1])
+                    B_point_currents.append(row[1][1])
 
                 A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
                 B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
-                currents.append(sum(A_point_currents) / len(A_point_currents))
+                A_currents.append(sum(A_point_currents) / len(A_point_currents))
+                B_currents.append(sum(B_point_currents) / len(B_point_currents))
 
             # update measured values according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
@@ -982,7 +988,7 @@ class smu:
                         f_int_mia = A_cal["source_i"]["meas"]
 
                     A_voltages = f_int_mva(A_voltages)
-                    currents = f_int_mia(currents).tolist()
+                    A_currents = f_int_mia(A_currents).tolist()
 
                     if self._channel_settings[ch]["four_wire"] is True:
                         B_cal = self._channel_settings[ch]["external_calibration"]["B"]
