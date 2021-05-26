@@ -492,7 +492,7 @@ class smu:
             "external_calibration": {},
         }
 
-    def configure_sweep(self, start, stop, points, dual=True, source_mode="v"):
+    def configure_sweep(self, start, stop, points, dual=False, source_mode="v"):
         """Configure an output sweep for all channels.
 
         Parameters
@@ -534,6 +534,56 @@ class smu:
                 values = f_int(values).tolist()
 
             self._channel_settings[ch]["sweep_values"] = values
+            self._channel_settings[ch]["dual_sweep"] = dual
+
+    def configure_list_sweep(self, values=[], dual=False, source_mode="v"):
+        """Configure list sweeps for all channels.
+
+        All lists must be the same length.
+
+        Parameters
+        ----------
+        values : list of lists
+            Lists of values for source sweeps, one sub-list for for each channel. The
+            outer list index is the channel index, e.g. passing
+            `[[0, 1, 2], [0, 1, 2]]` will sweep both channels 0 and 1 with values of
+            `[0, 1, 2]`.
+        dual : bool
+            If `True`, append the reverse sweep as well.
+        source_mode : str
+            Desired source mode during measurement: "v" for voltage, "i" for current.
+        """
+        if source_mode not in ["v", "i"]:
+            raise ValueError(
+                f"Invalid source mode: {source_mode}. Must be 'v' (voltage) or 'i' "
+                + "(current)."
+            )
+
+        if len(values) != self.num_channels:
+            raise ValueError(
+                f"Invalid valuesl ist length: {len(values)}. The length of the values "
+                + f"list must match the number of channels: {self.num_channels}."
+            )
+
+        for ch in range(self.num_channels):
+            self._channel_settings[ch]["sweep_mode"] = source_mode
+
+            offset = 0
+            if source_mode == "v":
+                if self._channel_settings[ch]["v_range"] == 2.5:
+                    # channel LO connected to 2.5 V
+                    offset = 2.5
+
+            sweep = [x + offset for x in values[ch]]
+
+            # update set values according to external calibration
+            if self._channel_settings[ch]["calibration_mode"] == "external":
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
+                f_int = cal[f"source_{source_mode}"]["set"]
+                sweep = f_int(sweep).tolist()
+
+            self._channel_settings[ch]["sweep_values"] = sweep
             self._channel_settings[ch]["dual_sweep"] = dual
 
     def configure_dc(self, values=[], source_mode="v"):
