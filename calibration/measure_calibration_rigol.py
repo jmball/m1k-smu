@@ -1,4 +1,4 @@
-"""Calibrate an ADALM1000 with a Rigol DM3058E DMM and a Rigol DP821A PSU."""
+"""Calibrate an ADALM1000 with a Rigol DM3058E DMM and Rigol DP821A PSU using RS232."""
 
 import argparse
 import pathlib
@@ -12,6 +12,38 @@ import yaml
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--dmm_address",
+    type=str,
+    default="ASRL3::INSTR",
+    help="Rigol DMM VISA resource address, e.g. ASRL3::INSTR",
+)
+parser.add_argument(
+    "--psu_address",
+    type=str,
+    default="ASRL4::INSTR",
+    help="Rigol PSU VISA resource address, e.g. ASRL4::INSTR",
+)
+parser.add_argument(
+    "--rigol_baud",
+    type=int,
+    default=19200,
+    help="Rigol DMM and PSU baud rate, e.g. 19200.",
+)
+parser.add_argument(
+    "--rigol_flow",
+    type=str,
+    default="XON/XOFF",
+    choices=["NONE", "XON/XOFF", "RTS/CTS", "DTR/DSR"],
+    help="Rigol DMM and PSU flow control setting, e.g. XON/XOFF",
+)
+parser.add_argument(
+    "--rigol_term",
+    type=str,
+    default="LF",
+    choices=["CR", "LF", "CRLF"],
+    help="Rigol DMM and PSU termination character, e.g. LF",
+)
 parser.add_argument(
     "--simv",
     action="store_true",
@@ -32,35 +64,34 @@ if cal != "y":
 
 # connect to Rigol DM3058E DMM and Rigol DP821A PSU
 rm = pyvisa.ResourceManager()
+flow_controls = {"NONE": 0, "XON/XOFF": 1, "RTS/CTS": 2, "DTR/DSR": 4}
+term_chars = {"CR": "\r", "LF": "\n", "CRLF": "\r\n"}
 
 print("\nConnecting to Rigol DM3058E DMM...")
-dmm_address = "ASRL3::INSTR"
-dmm_baud = 19200
-dmm_flow_control = 1
-dmm_term_char = "\n"
+dmm_address = args.dmm_address
+rigol_baud = args.rigol_baud
+rigol_flow_control = flow_controls[args.rigol_flow]
+rigol_term_char = term_chars[args.rigol_term]
 
 dmm = rm.open_resource(
     dmm_address,
-    baud_rate=dmm_baud,
-    flow_control=dmm_flow_control,
-    write_termination=dmm_term_char,
-    read_termination=dmm_term_char,
+    baud_rate=rigol_baud,
+    flow_control=rigol_flow_control,
+    write_termination=rigol_term_char,
+    read_termination=rigol_term_char,
 )
 print(f"Rigol DM3058E ID: {dmm.query('*IDN?')}")
 print("Connected!")
 
 print("\nConnecting to Rigol DP821A PSU...")
-psu_address = "ASRL3::INSTR"
-psu_baud = 19200
-psu_flow_control = 1
-psu_term_char = "\n"
+psu_address = args.psu_address
 
 psu = rm.open_resource(
     psu_address,
-    baud_rate=psu_baud,
-    flow_control=psu_flow_control,
-    write_termination=psu_term_char,
-    read_termination=psu_term_char,
+    baud_rate=rigol_baud,
+    flow_control=rigol_flow_control,
+    write_termination=rigol_term_char,
+    read_termination=rigol_term_char,
 )
 print(f"Rigol DP821A ID: {psu.query('*IDN?')}")
 print("Connected!")
@@ -447,8 +478,9 @@ def source_current_cal(channel):
 
 # perform calibration measurements in exact order required for cal file
 input(
-    "\nConnect Keithley HI to ADALM1000 CH A and Keithley LO to ADALM1000 GND. Press "
-    + "Enter when ready..."
+    "\nConnect Rigol DP821A PSU HI and Rigol DM3058E DMM HI to ADALM1000 CH A, and "
+    + "Rigol DP821A PSU LO and Rigol DM3058E DMM LO to ADALM1000 GND. Press Enter when"
+    + " ready..."
 )
 measure_voltage_cal("A")
 measure_current_cal("A")
@@ -456,14 +488,16 @@ source_voltage_cal("A")
 
 if args.simv is True:
     input(
-        "\nConnect Keithley HI to ADALM1000 CH A and Keithley LO to ADALM1000 2.5 V. "
-        + "Press Enter when ready..."
+        "\nConnect Rigol DP821A PSU HI and Rigol DM3058E DMM HI to ADALM1000 CH A and "
+        + "Rigol DP821A PSU LO and Rigol DM3058E DMM LO to ADALM1000 2.5 V. Press Enter"
+        + " when ready..."
     )
     source_current_cal("A")
 
 input(
-    "\nConnect Keithley HI to ADALM1000 CH B and Keithley LO to ADALM1000 GND. Press "
-    + "Enter when ready..."
+    "\nConnect Rigol DP821A PSU HI and Rigol DM3058E DMM HI to ADALM1000 CH B, and "
+    + "Rigol DP821A PSU LO and Rigol DM3058E DMM LO to ADALM1000 GND. Press Enter when"
+    + " ready..."
 )
 measure_voltage_cal("B")
 measure_current_cal("B")
@@ -471,8 +505,9 @@ source_voltage_cal("B")
 
 if args.simv is True:
     input(
-        "\nConnect Keithley HI to ADALM1000 CH B and Keithley LO to ADALM1000 2.5 V. "
-        + "Press Enter when ready..."
+        "\nConnect Rigol DP821A PSU HI and Rigol DM3058E DMM HI to ADALM1000 CH B and "
+        + "Rigol DP821A PSU LO and Rigol DM3058E DMM LO to ADALM1000 2.5 V. Press Enter"
+        + " when ready..."
     )
     source_current_cal("B")
 
