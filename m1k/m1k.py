@@ -397,7 +397,7 @@ class smu:
                 else:
                     raise ValueError(
                         f"Invalid calibration key: {meas}. Must be 'meas_v', 'meas_i',"
-                        + "'source_v', or 'source_i'."
+                        + " 'source_v', or 'source_i'."
                     )
 
         self._channel_settings[channel]["calibration_mode"] = "external"
@@ -884,77 +884,184 @@ class smu:
         """
         t_delta = 1 / self.sample_rate
 
+        # init processed data container
         processed_data = {}
         for ch in range(self.num_channels):
-            dev_channel = self._channel_settings[ch]["dev_channel"]
+            processed_data[ch] = []
 
-            # start indices for each measurement value
-            start_ixs = range(0, len(raw_data[ch]), self._samples_per_datum)
+        cumulative_chunk_lengths = 0
+        for chunk in raw_data:
+            if self.ch_per_board == 1:
+                for ch in range(self.num_channels):
+                    # start indices for each measurement value
+                    start_ixs = range(0, len(chunk[ch]), self._samples_per_datum)
 
-            timestamps = []
-            A_voltages = []
-            B_voltages = []
-            A_currents = []
-            B_currents = []
-            for i in start_ixs:
-                # final point can overlap with start of next voltage so cut it
-                data_slice = raw_data[ch][i : i + self._samples_per_datum - 1]
-                # discard settling delay data
-                data_slice = data_slice[self._settling_delay_samples :]
+                    A_voltages = []
+                    B_voltages = []
+                    currents = []
+                    timestamps = []
+                    for i in start_ixs:
+                        # final point can overlap with start of next voltage so cut it
+                        data_slice = chunk[ch][i : i + self._samples_per_datum - 1]
+                        # discard settling delay data
+                        data_slice = data_slice[self._settling_delay_samples :]
 
-                # approximate datum timestamp, doesn't account for chunking
-                timestamps.append(t0 + i * t_delta * self._samples_per_datum)
+                        # approximate datum timestamp, doesn't account for chunking
+                        timestamps.append(
+                            t0
+                            + (cumulative_chunk_lengths + i)
+                            * t_delta
+                            * self._samples_per_datum
+                        )
 
-                # pick out and process useful data
-                A_point_voltages = []
-                B_point_voltages = []
-                A_point_currents = []
-                B_point_currents = []
-                for row in data_slice:
-                    A_point_voltages.append(row[0][0])
-                    B_point_voltages.append(row[1][0])
-                    A_point_currents.append(row[0][1])
-                    B_point_currents.append(row[1][1])
+                        # pick out and process useful data
+                        A_point_voltages = []
+                        B_point_voltages = []
+                        point_currents = []
+                        for row in data_slice:
+                            A_point_voltages.append(row[0][0])
+                            B_point_voltages.append(row[1][0])
+                            point_currents.append(row[0][1])
 
-                A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
-                B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
-                A_currents.append(sum(A_point_currents) / len(A_point_currents))
-                B_currents.append(sum(B_point_currents) / len(B_point_currents))
+                        A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
+                        B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
+                        currents.append(sum(point_currents) / len(point_currents))
 
-            # update measured values according to external calibration
-            if self._channel_settings[ch]["calibration_mode"] == "external":
-                if self.ch_per_board == 1:
-                    A_cal = self._channel_settings[ch]["external_calibration"]["A"]
+                    # update measured values according to external calibration
+                    if self._channel_settings[ch]["calibration_mode"] == "external":
+                        A_cal = self._channel_settings[ch]["external_calibration"]["A"]
 
-                    source_mode = self._channel_settings[ch]["source_mode"]
-                    if source_mode == "v":
-                        f_int_mva = A_cal["source_v"]["meas"]
-                        f_int_mia = A_cal["meas_i"]
+                        source_mode = self._channel_settings[ch]["source_mode"]
+                        if source_mode == "v":
+                            f_int_mva = A_cal["source_v"]["meas"]
+                            f_int_mia = A_cal["meas_i"]
+                        else:
+                            f_int_mva = A_cal["meas_v"]
+                            f_int_mia = A_cal["source_i"]["meas"]
+
+                        A_voltages = f_int_mva(A_voltages)
+                        currents = f_int_mia(currents).tolist()
+
+                        if self._channel_settings[ch]["four_wire"] is True:
+                            B_cal = self._channel_settings[ch]["external_calibration"][
+                                "B"
+                            ]
+                            f_int_mvb = B_cal["meas_v"]
+                            B_voltages = f_int_mvb(B_voltages)
+                            voltages = A_voltages - B_voltages
+                        else:
+                            voltages = A_voltages
+
+                        voltages = voltages.tolist()
                     else:
-                        f_int_mva = A_cal["meas_v"]
-                        f_int_mia = A_cal["source_i"]["meas"]
+                        if self._channel_settings[ch]["four_wire"] is True:
+                            voltages = [
+                                av - bv for av, bv in zip(A_voltages, B_voltages)
+                            ]
+                        else:
+                            voltages = A_voltages
 
-                    A_voltages = f_int_mva(A_voltages)
-                    A_currents = f_int_mia(A_currents).tolist()
+                    processed_data[ch].extend(
+                        [
+                            (v, i, t, 0)
+                            for v, i, t in zip(voltages, currents, timestamps)
+                        ]
+                    )
+            elif self.ch_per_board == 2:
+                for board in range(self.num_boards):
+                    # start indices for each measurement value
+                    start_ixs = range(0, len(chunk[board]), self._samples_per_datum)
 
-                    if self._channel_settings[ch]["four_wire"] is True:
-                        B_cal = self._channel_settings[ch]["external_calibration"]["B"]
-                        f_int_mvb = B_cal["meas_v"]
-                        B_voltages = f_int_mvb(B_voltages)
-                        voltages = A_voltages - B_voltages
-                    else:
-                        voltages = A_voltages
+                    A_voltages = []
+                    B_voltages = []
+                    A_currents = []
+                    B_currents = []
+                    timestamps = []
+                    for i in start_ixs:
+                        # final point can overlap with start of next voltage so cut it
+                        data_slice = chunk[board][i : i + self._samples_per_datum - 1]
+                        # discard settling delay data
+                        data_slice = data_slice[self._settling_delay_samples :]
 
-                    voltages = voltages.tolist()
-            else:
-                if self._channel_settings[ch]["four_wire"] is True:
-                    voltages = [av - bv for av, bv in zip(A_voltages, B_voltages)]
-                else:
-                    voltages = A_voltages
+                        # approximate datum timestamp, doesn't account for chunking
+                        timestamps.append(
+                            t0
+                            + (cumulative_chunk_lengths + i)
+                            * t_delta
+                            * self._samples_per_datum
+                        )
 
-            processed_data[ch] = [
-                (v, i, t, 0) for v, i, t in zip(voltages, currents, timestamps)
-            ]
+                        # pick out and process useful data
+                        A_point_voltages = []
+                        B_point_voltages = []
+                        A_point_currents = []
+                        B_point_currents = []
+                        for row in data_slice:
+                            A_point_voltages.append(row[0][0])
+                            B_point_voltages.append(row[1][0])
+                            A_point_currents.append(row[0][1])
+                            B_point_currents.append(row[1][1])
+
+                        A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
+                        B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
+                        A_currents.append(sum(A_point_currents) / len(A_point_currents))
+                        B_currents.append(sum(B_point_currents) / len(B_point_currents))
+
+                    # update measured values according to external calibration
+                    if (
+                        self._channel_settings[2 * board]["calibration_mode"]
+                        == "external"
+                    ):
+                        A_cal = self._channel_settings[2 * board][
+                            "external_calibration"
+                        ]["A"]
+
+                        source_mode = self._channel_settings[2 * board]["source_mode"]
+                        if source_mode == "v":
+                            f_int_mva = A_cal["source_v"]["meas"]
+                            f_int_mia = A_cal["meas_i"]
+                        else:
+                            f_int_mva = A_cal["meas_v"]
+                            f_int_mia = A_cal["source_i"]["meas"]
+
+                        A_voltages = f_int_mva(A_voltages).tolist()
+                        A_currents = f_int_mia(A_currents).tolist()
+
+                    if (
+                        self._channel_settings[2 * board + 1]["calibration_mode"]
+                        == "external"
+                    ):
+                        B_cal = self._channel_settings[2 * board + 1][
+                            "external_calibration"
+                        ]["B"]
+
+                        source_mode = self._channel_settings[2 * board + 1][
+                            "source_mode"
+                        ]
+                        if source_mode == "v":
+                            f_int_mvb = B_cal["source_v"]["meas"]
+                            f_int_mib = B_cal["meas_i"]
+                        else:
+                            f_int_mvb = B_cal["meas_v"]
+                            f_int_mib = B_cal["source_i"]["meas"]
+
+                        B_voltages = f_int_mvb(B_voltages).tolist()
+                        B_currents = f_int_mib(B_currents).tolist()
+
+                    processed_data[2 * board].extend(
+                        [
+                            (v, i, t, 0)
+                            for v, i, t in zip(A_voltages, A_currents, timestamps)
+                        ]
+                    )
+                    processed_data[2 * board + 1].extend(
+                        [
+                            (v, i, t, 0)
+                            for v, i, t in zip(B_voltages, B_currents, timestamps)
+                        ]
+                    )
+
+            cumulative_chunk_lengths += len(chunk)
 
         return processed_data
 
