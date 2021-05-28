@@ -476,18 +476,23 @@ class smu:
         channel : int
             Channel number (0-indexed).
         """
+        if self.ch_per_board == 1:
+            default_four_wire = True
+        elif self.ch_per_board == 2:
+            default_four_wire = False
+
         self._channel_settings[channel] = {
             "serial": None,
             "dev_ix": None,
             "dev_channel": None,
             "auto_off": False,
-            "four_wire": True,
+            "four_wire": default_four_wire,
             "v_range": 5,
             "source_mode": "v",
             "sweep_mode": "v",
             "dc_values": [],
             "sweep_values": [],
-            "dual_sweep": True,
+            "dual_sweep": False,
             "calibration_mode": "internal",
             "external_calibration": {},
         }
