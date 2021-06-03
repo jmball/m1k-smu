@@ -1,4 +1,4 @@
-"""Calibrate an ADALM1000 with a Rigol DM3058E DMM and Rigol DP821A PSU using RS232."""
+"""Calibrate ADALM1000's with a Rigol DM3058E DMM and Rigol DP821A PSU using RS232."""
 
 import argparse
 import pathlib
