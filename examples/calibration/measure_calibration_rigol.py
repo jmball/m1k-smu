@@ -177,7 +177,7 @@ psu.set_ocp_enable(True, 1)
 print("PSU configuration complete!")
 
 
-def measure_voltage_cal(smu, channel, save_file, cal_dict):
+def measure_voltage_cal(smu, channel, save_file):
     """Perform measurement for voltage measurement calibration of an ADALM100 channel.
 
     Parameters
@@ -188,9 +188,9 @@ def measure_voltage_cal(smu, channel, save_file, cal_dict):
         SMU channel number.
     save_file : str or pathlib.Path
         Path to save file formatted for internal calibration.
-    cal_dict : dict
-        Calibration dictionary for external calibration.
     """
+    global cal_dict
+
     print(f"\nPerforming CH{channel + 1} measure voltage calibration measurement...")
 
     # get smu sub-channel letter
@@ -243,7 +243,7 @@ def measure_voltage_cal(smu, channel, save_file, cal_dict):
     print(f"CH{channel + 1} measure voltage calibration measurement complete!")
 
 
-def measure_current_cal(smu, channel, save_file, cal_dict):
+def measure_current_cal(smu, channel, save_file):
     """Perform measurement for current measurement calibration of an ADALM100 channel.
 
     Parameters
@@ -254,9 +254,9 @@ def measure_current_cal(smu, channel, save_file, cal_dict):
         SMU channel number.
     save_file : str or pathlib.Path
         Path to save file formatted for internal calibration.
-    cal_dict : dict
-        Calibration dictionary for external calibration.
     """
+    global cal_dict
+
     print(f"\nPerforming CH{channel + 1} measure current calibration measurement...")
 
     # get smu sub-channel letter
@@ -329,7 +329,7 @@ def measure_current_cal(smu, channel, save_file, cal_dict):
     print(f"CH{channel + 1} measure current calibration measurement complete!")
 
 
-def source_voltage_cal(smu, channel, save_file, cal_dict):
+def source_voltage_cal(smu, channel, save_file):
     """Perform measurement for voltage source calibration of an ADALM100 channel.
 
     Parameters
@@ -340,9 +340,9 @@ def source_voltage_cal(smu, channel, save_file, cal_dict):
         SMU channel number.
     save_file : str or pathlib.Path
         Path to save file formatted for internal calibration.
-    cal_dict : dict
-        Calibration dictionary for external calibration.
     """
+    global cal_dict
+
     print(f"\nPerforming CH{channel + 1} source voltage calibration measurement...")
 
     # get smu sub-channel letter
@@ -388,7 +388,7 @@ def source_voltage_cal(smu, channel, save_file, cal_dict):
     print(f"CH{channel + 1} source voltage calibration measurement complete!")
 
 
-def source_current_cal(smu, channel, save_file, cal_dict):
+def source_current_cal(smu, channel, save_file):
     """Perform measurement for current source calibration of an ADALM100 channel.
 
     Parameters
@@ -399,9 +399,9 @@ def source_current_cal(smu, channel, save_file, cal_dict):
         SMU channel number.
     save_file : str or pathlib.Path
         Path to save file formatted for internal calibration.
-    cal_dict : dict
-        Calibration dictionary for external calibration.
     """
+    global cal_dict
+
     print(f"\nPerforming CH{channel + 1} source current calibration measurement...")
 
     # get smu sub-channel letter
@@ -447,7 +447,7 @@ def source_current_cal(smu, channel, save_file, cal_dict):
     print(f"CH{channel + 1} source voltage calibration measurement complete!")
 
 
-def channel_cal(smu, channel, save_file, cal_dict):
+def channel_cal(smu, channel, save_file):
     """Run all calibration measurements for a channel.
 
     Parameters
@@ -458,35 +458,33 @@ def channel_cal(smu, channel, save_file, cal_dict):
         SMU channel number.
     save_file : str or pathlib.Path
         Path to save file formatted for internal calibration.
-    cal_dict : dict
-        Calibration dictionary for external calibration.
     """
     input(
         f"\nConnect PSU CH1 HI and DMM HI to SMU CH {channel + 1} HI, and PSU "
         + f"CH1 LO and DMM LO to SMU CH {channel + 1} LO. Press Enter when "
         + "ready..."
     )
-    measure_voltage_cal(smu, channel, save_file, cal_dict)
+    measure_voltage_cal(smu, channel, save_file)
 
     input(
         f"\nConnect DMM HI to SMU CH {channel + 1} HI, and DMM LO to SMU CH "
         + f"{channel + 1} LO. Press Enter when ready..."
     )
-    source_voltage_cal(smu, channel, save_file, cal_dict)
+    source_voltage_cal(smu, channel, save_file)
 
     input(
         f"\nConnect PSU CH1 HI to DMM current HI, DMM LO to SMU CH {channel + 1}"
         + f" HI, and PSU CH1 LO to SMU CH {channel + 1} LO. Press Enter when "
         + "ready..."
     )
-    measure_current_cal(smu, channel, save_file, cal_dict)
+    measure_current_cal(smu, channel, save_file)
 
     if args.simv is True:
         input(
             f"\nConnect DMM current HI to SMU CH {channel + 1} HI and DMM LO to "
             + f"SMU CH {channel + 1} 2.5 V. Press Enter when ready..."
         )
-        source_current_cal(smu, channel, save_file, cal_dict)
+        source_current_cal(smu, channel, save_file)
 
 
 # perform calibration measurements in exact order required for cal file
@@ -509,8 +507,8 @@ for board in range(smu.num_boards):
     channel_B_num = 2 * board + 1
 
     # run calibrations
-    channel_cal(smu, channel_A_num, save_file, cal_dict)
-    channel_cal(smu, channel_B_num, save_file, cal_dict)
+    channel_cal(smu, channel_A_num, save_file)
+    channel_cal(smu, channel_B_num, save_file)
 
     # export calibration dictionary to a yaml file
     with open(save_file_dict, "w") as f:
