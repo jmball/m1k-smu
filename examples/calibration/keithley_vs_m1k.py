@@ -9,7 +9,7 @@ import numpy as np
 import pyvisa
 import yaml
 
-sys.path.insert(1, str(pathlib.Path.cwd().parent))
+sys.path.insert(1, str(pathlib.Path.cwd().parent.parent.joinpath("src")))
 import m1k.m1k as m1k
 
 

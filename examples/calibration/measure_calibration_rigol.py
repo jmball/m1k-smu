@@ -12,7 +12,7 @@ import yaml
 import dp800
 import dm3058
 
-sys.path.insert(1, str(pathlib.Path.cwd().parent))
+sys.path.insert(1, str(pathlib.Path.cwd().parent.parent.joinpath("src")))
 import m1k.m1k as m1k
 
 parser = argparse.ArgumentParser()

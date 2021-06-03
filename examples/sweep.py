@@ -7,7 +7,7 @@ import sys
 
 import matplotlib.pyplot as plt
 
-sys.path.insert(1, str(pathlib.Path.cwd().parent))
+sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
 
 
