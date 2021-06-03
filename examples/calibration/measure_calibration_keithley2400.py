@@ -1,4 +1,4 @@
-"""Calibrate an ADALM1000 with a Keithley 2400 using RS232."""
+"""Calibrate ADALM1000's with a Keithley 2400 using RS232."""
 
 import argparse
 import pathlib
@@ -10,8 +10,17 @@ import pysmu
 import pyvisa
 import yaml
 
+sys.path.insert(1, str(pathlib.Path.cwd().parent.parent.joinpath("src")))
+import m1k.m1k as m1k
+
 
 parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--plf",
+    type=float,
+    default=50,
+    help="Power line frequency, e.g. 50 Hz.",
+)
 parser.add_argument(
     "--keithley_address",
     type=str,
@@ -56,6 +65,20 @@ if cal != "y":
     print("\nCalibration measurement aborted!.\n")
     sys.exit()
 
+# save ADALM1000 formatted calibration file in data folder
+cwd = pathlib.Path.cwd()
+cal_data_folder = cwd.joinpath("data")
+save_file = cal_data_folder.joinpath(f"cal_{int(time.time())}_{m1k.serial}.txt")
+
+# save calibration dictionary in same folder
+save_file_dict = cal_data_folder.joinpath(f"cal_{int(time.time())}_{m1k.serial}.yaml")
+cal_dict = {
+    m1k.serial: {
+        "A": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
+        "B": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
+    }
+}
+
 # connect to keithley 2400
 rm = pyvisa.ResourceManager()
 flow_controls = {"NONE": 0, "XON/XOFF": 1, "RTS/CTS": 2, "DTR/DSR": 4}
@@ -77,54 +100,35 @@ keithley2400 = rm.open_resource(
 print(f"Keithley ID: {keithley2400.query('*IDN?')}")
 print("Connected!")
 
-# connect to M1k
-print("\nConnecting to ADALM1000...")
-# add all with default settings
-session = pysmu.Session()
+# connect to m1k's
+print("\nConnecting to SMU...")
+smu = m1k.smu(plf=args.plf, ch_per_board=2)
 
-# make sure only one is connected
-if len(session.devices) > 1:
-    raise ValueError(
-        f"Too many ADALM1000's connected: {len(session.devices)}. Disconnect all "
-        + "except the one to be calibrated."
-    )
-elif len(session.devices) == 0:
-    raise ValueError("Device not found. Check connections and try again.")
+# get board serial mapping
+board_mapping_file = cwd.parent.joinpath("board_mapping.yaml")
+with open(board_mapping_file, "r") as f:
+    board_mapping = yaml.load(f, Loader=yaml.FullLoader)
 
-# setup
-m1k = session.devices[0]
-print(f"ADALM1000 ID: {m1k.serial}")
-m1kchA = m1k.channels["A"]
-m1kchB = m1k.channels["B"]
-m1kchA.mode = pysmu.Mode.HI_Z
-m1kchB.mode = pysmu.Mode.HI_Z
-m1k.set_led(2)
-print("Connected!")
+# get list of serials in channel order
+serials = []
+for i in range(len(board_mapping)):
+    # channel mapping file is 1-indexed
+    serials.append(board_mapping[i])
 
-
-# save ADALM1000 formatted calibration file in data folder
-cwd = pathlib.Path.cwd()
-cal_data_folder = cwd.joinpath("data")
-save_file = cal_data_folder.joinpath(f"cal_{int(time.time())}_{m1k.serial}.txt")
-
-# save calibration dictionary in same folder
-save_file_dict = cal_data_folder.joinpath(f"cal_{int(time.time())}_{m1k.serial}.yaml")
-cal_dict = {
-    m1k.serial: {
-        "A": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
-        "B": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
-    }
-}
+# connect boards
+smu.connect(serials=serials)
 
 # set global measurement parameters
 nplc = 1
 settling_delay = 0.005
-plf = 50  # power line frequency in Hz
 
 # set m1k measurement paramters
-m1k_nplc = int((nplc / plf) * session.sample_rate)  # number of samples
-m1k_settling_delay = int(settling_delay * session.sample_rate)  # number of samples
-m1k_samples = m1k_nplc + m1k_settling_delay
+smu.nplc = nplc
+smu.settling_delay = settling_delay
+
+for board in range(smu.num_boards):
+    print(f"SMU board {board} ID: {smu.get_channel_id(2 * board)}")
+print("Connected!")
 
 # set measurement data using logarithmic spacing
 cal_voltages = np.logspace(-3, 0, 25) * 5
@@ -172,22 +176,24 @@ keithley2400.write(":SYST:AZER OFF")
 print("Keithley configuration complete!")
 
 
-def measure_voltage_cal(channel):
+def measure_voltage_cal(smu, channel, save_file, cal_dict):
     """Perform measurement for voltage measurement calibration of an ADALM100 channel.
 
     Parameters
     ----------
-    channel : {'A', 'B'}
-        ADALM1000 channel name: 'A' or 'B'.
+    smu : m1k.smu
+        SMU object.
+    channel : int
+        SMU channel number.
+    save_file : str or pathlib.Path
+        Path to save file formatted for internal calibration.
+    cal_dict : dict
+        Calibration dictionary for external calibration.
     """
-    if channel == "A":
-        m1kch = m1kchA
-    elif channel == "B":
-        m1kch = m1kchB
-    else:
-        raise ValueError(f"Invalid channel: {channel}. Must be 'A' or 'B'.")
+    print(f"\nPerforming CH{channel + 1} measure voltage calibration measurement...")
 
-    print(f"\nPerforming CH{channel} measure voltage calibration measurement...")
+    # get smu sub-channel letter
+    dev_channel = smu.channel_settings[channel]["dev_channel"]
 
     # Autorange keithley source votlage and measure current
     keithley2400.write(":SOUR:FUNC VOLT")
@@ -195,9 +201,8 @@ def measure_voltage_cal(channel):
     keithley2400.write(":SOUR:VOLT:RANG:AUTO ON")
     keithley2400.write(":SENS:CURR:RANG:AUTO ON")
 
-    # set m1k to source current measure voltage and set current to 0
-    m1kch.mode = pysmu.Mode.HI_Z
-    m1k.set_led(6)
+    # set smu to measure voltage in high impedance mode
+    smu.configure_dc(values=0, source_mode="i")
 
     # set keithley to source zero volts and enable output
     keithley2400.write(":SOUR:VOLT 0")
@@ -220,40 +225,42 @@ def measure_voltage_cal(channel):
             time.sleep(0.1)
             keithley_data = keithley2400.query_ascii_values(":READ?")
             keithley_v = keithley_data[0]
-            m1k_data = m1kch.get_samples(m1k_samples)
-            m1k_vs = [v for v, i in m1k_data[m1k_settling_delay:]]
-            m1k_v = sum(m1k_vs) / len(m1k_vs)
-            f.write(f"<{keithley_v:6.4f}, {m1k_v:7.5f}>\n")
-            cal_ch_meas_v.append([keithley_v, m1k_v])
-            print(f"Keithley: {keithley_v:6.4f}, ADALM1000: {m1k_v:7.5f}")
+
+            smu_v = smu.measure(measurement="dc")[channel][0][0]
+
+            f.write(f"<{keithley_v:6.4f}, {smu_v:7.5f}>\n")
+            cal_ch_meas_v.append([keithley_v, smu_v])
+            print(f"Keithley: {keithley_v:6.4f}, SMU: {smu_v:7.5f}")
 
         f.write("<\>\n\n")
-        cal_dict[m1k.serial][channel]["meas_v"] = cal_ch_meas_v
+        cal_dict[dev_channel]["meas_v"] = cal_ch_meas_v
 
     # turn off smu outputs
-    m1k.set_led(2)
+    smu.enable_output(False)
     keithley2400.write(":SOUR:VOLT 0")
     keithley2400.write(":OUTP OFF")
 
-    print("CHA measure voltage calibration measurement complete!")
+    print(f"CH{channel + 1} measure voltage calibration measurement complete!")
 
 
-def measure_current_cal(channel):
+def measure_current_cal(smu, channel, save_file, cal_dict):
     """Perform measurement for current measurement calibration of an ADALM100 channel.
 
     Parameters
     ----------
-    channel : {'A', 'B'}
-        ADALM1000 channel name: 'A' or 'B'.
+    smu : m1k.smu
+        SMU object.
+    channel : int
+        SMU channel number.
+    save_file : str or pathlib.Path
+        Path to save file formatted for internal calibration.
+    cal_dict : dict
+        Calibration dictionary for external calibration.
     """
-    if channel == "A":
-        m1kch = m1kchA
-    elif channel == "B":
-        m1kch = m1kchB
-    else:
-        raise ValueError(f"Invalid channel: {channel}. Must be 'A' or 'B'.")
+    print(f"\nPerforming CH{channel + 1} measure current calibration measurement...")
 
-    print(f"\nPerforming CH{channel} measure current calibration measurement...")
+    # get smu sub-channel letter
+    dev_channel = smu.channel_settings[channel]["dev_channel"]
 
     # Autorange keithley source votlage and measure current
     keithley2400.write(":SOUR:FUNC CURR")
@@ -261,10 +268,8 @@ def measure_current_cal(channel):
     keithley2400.write(":SOUR:CURR:RANG:AUTO ON")
     keithley2400.write(":SENS:VOLT:RANG:AUTO ON")
 
-    # set m1k to source current measure voltage and set current to 0
-    m1kch.mode = pysmu.Mode.SVMI
-    m1kch.constant(0)
-    m1k.set_led(6)
+    # set m1k to source voltage, measure current and set voltage to 0
+    smu.configure_dc(values=0, source_mode="v")
 
     # set keithley to source zero volts and enable output
     keithley2400.write(":SOUR:CURR 0")
@@ -288,41 +293,42 @@ def measure_current_cal(channel):
             keithley_data = keithley2400.query_ascii_values(":READ?")
             # reverse polarity as SMU's are seeing opposites
             keithley_i = -keithley_data[1]
-            m1k_data = m1kch.get_samples(m1k_samples)
-            m1k_is = [i for v, i in m1k_data[m1k_settling_delay:]]
-            m1k_i = sum(m1k_is) / len(m1k_is)
-            f.write(f"<{keithley_i:6.4f}, {m1k_i:7.5f}>\n")
-            cal_ch_meas_i.append([keithley_i, m1k_i])
-            print(f"Keithley: {keithley_i:6.4f}, ADALM1000: {m1k_i:7.5f}")
+
+            smu_i = smu.measure(measurement="dc")[channel][0][1]
+
+            f.write(f"<{keithley_i:6.4f}, {smu_i:7.5f}>\n")
+            cal_ch_meas_i.append([keithley_i, smu_i])
+            print(f"Keithley: {keithley_i:6.4f}, SMU: {smu_i:7.5f}")
 
         f.write("<\>\n\n")
-        cal_dict[m1k.serial][channel]["meas_i"] = cal_ch_meas_i
+        cal_dict[dev_channel]["meas_i"] = cal_ch_meas_i
 
     # turn off smu outputs
-    m1kch.mode = pysmu.Mode.HI_Z
-    m1k.set_led(2)
+    smu.enable_output(False)
     keithley2400.write(":SOUR:CURR 0")
     keithley2400.write(":OUTP OFF")
 
-    print(f"CH{channel} measure current calibration measurement complete!")
+    print(f"CH{channel + 1} measure current calibration measurement complete!")
 
 
-def source_voltage_cal(channel):
+def source_voltage_cal(smu, channel, save_file, cal_dict):
     """Perform measurement for voltage source calibration of an ADALM100 channel.
 
     Parameters
     ----------
-    channel : {'A', 'B'}
-        ADALM1000 channel name: 'A' or 'B'.
+    smu : m1k.smu
+        SMU object.
+    channel : int
+        SMU channel number.
+    save_file : str or pathlib.Path
+        Path to save file formatted for internal calibration.
+    cal_dict : dict
+        Calibration dictionary for external calibration.
     """
-    if channel == "A":
-        m1kch = m1kchA
-    elif channel == "B":
-        m1kch = m1kchB
-    else:
-        raise ValueError(f"Invalid channel: {channel}. Must be 'A' or 'B'.")
+    print(f"\nPerforming CH{channel + 1} source voltage calibration measurement...")
 
-    print(f"\nPerforming CH{channel} source voltage calibration measurement...")
+    # get smu sub-channel letter
+    dev_channel = smu.channel_settings[channel]["dev_channel"]
 
     # Autorange keithley source votlage and measure current
     keithley2400.write(":SOUR:FUNC CURR")
@@ -330,11 +336,8 @@ def source_voltage_cal(channel):
     keithley2400.write(":SOUR:CURR:RANG:AUTO ON")
     keithley2400.write(":SENS:VOLT:RANG:AUTO ON")
 
-    # set m1k output to 0
-    m1kch.mode = pysmu.Mode.SVMI
-    m1kch.constant(0)
-    m1kch.get_samples(1)
-    m1k.set_led(6)
+    # set smu to source voltage, measure current and set voltage to 0
+    smu.configure_dc(values=0, source_mode="v")
 
     # set keithley to source zero volts and enable output
     keithley2400.write(":SOUR:CURR 0")
@@ -353,49 +356,46 @@ def source_voltage_cal(channel):
         # run through the list of voltages
         cal_ch_sour_v = []
         for v in cal_voltages:
-            m1kch.mode = pysmu.Mode.SVMI
-            m1kch.constant(float(v))
-            m1kch.get_samples(1)
-            m1kch.mode = pysmu.Mode.SVMI
+            smu.configure_dc(values=v, source_mode="v")
             time.sleep(0.1)
+
             keithley_data = keithley2400.query_ascii_values(":READ?")
             keithley_v = keithley_data[0]
-            m1k_data = m1kch.get_samples(m1k_samples)
-            m1k_vs = [v for v, i in m1k_data[m1k_settling_delay:]]
-            m1k_v = sum(m1k_vs) / len(m1k_vs)
-            f.write(f"<{m1k_v:7.5f}, {keithley_v:6.4f}>\n")
-            cal_ch_sour_v.append([v, m1k_v, keithley_v])
-            print(f"ADALM1000: {m1k_v:7.5f}, Keithley: {keithley_v:6.4f}")
+
+            smu_v = smu.measure(measurement="dc")[channel][0][0]
+
+            f.write(f"<{smu_v:7.5f}, {keithley_v:6.4f}>\n")
+            cal_ch_sour_v.append([v, smu_v, keithley_v])
+            print(f"SMU: {smu_v:7.5f}, Keithley: {keithley_v:6.4f}")
 
         f.write("<\>\n\n")
-        cal_dict[m1k.serial][channel]["source_v"] = cal_ch_sour_v
+        cal_dict[dev_channel]["source_v"] = cal_ch_sour_v
 
     # turn off smu outputs
-    m1kch.mode = pysmu.Mode.SVMI
-    m1kch.constant(0)
-    m1kch.get_samples(1)
-    m1k.set_led(2)
+    smu.enable_output(False)
     keithley2400.write(":OUTP OFF")
 
-    print(f"CH{channel} source voltage calibration measurement complete!")
+    print(f"CH{channel + 1} source voltage calibration measurement complete!")
 
 
-def source_current_cal(channel):
+def source_current_cal(smu, channel, save_file, cal_dict):
     """Perform measurement for current source calibration of an ADALM100 channel.
 
     Parameters
     ----------
-    channel : {'A', 'B'}
-        ADALM1000 channel name: 'A' or 'B'.
+    smu : m1k.smu
+        SMU object.
+    channel : int
+        SMU channel number.
+    save_file : str or pathlib.Path
+        Path to save file formatted for internal calibration.
+    cal_dict : dict
+        Calibration dictionary for external calibration.
     """
-    if channel == "A":
-        m1kch = m1kchA
-    elif channel == "B":
-        m1kch = m1kchB
-    else:
-        raise ValueError(f"Invalid channel: {channel}. Must be 'A' or 'B'.")
+    print(f"\nPerforming CH{channel + 1} source current calibration measurement...")
 
-    print(f"\nPerforming CH{channel} source current calibration measurement...")
+    # get smu sub-channel letter
+    dev_channel = smu.channel_settings[channel]["dev_channel"]
 
     # Autorange keithley source votlage and measure current
     keithley2400.write(":SOUR:FUNC VOLT")
@@ -403,11 +403,8 @@ def source_current_cal(channel):
     keithley2400.write(":SOUR:VOLT:RANG:AUTO ON")
     keithley2400.write(":SENS:CURR:RANG:AUTO ON")
 
-    # set m1k output to 0
-    m1kch.mode = pysmu.Mode.SIMV
-    m1kch.constant(0)
-    m1kch.get_samples(1)
-    m1k.set_led(6)
+    # set smu to source current, measure voltage and set current to 0
+    smu.configure_dc(values=0, source_mode="i")
 
     # set the current compliance
     keithley2400.write(":SENS:CURR:PROT 0.25")
@@ -429,69 +426,86 @@ def source_current_cal(channel):
         # run through the list of voltages
         cal_ch_sour_i = []
         for i in cal_currents_source:
-            m1kch.mode = pysmu.Mode.SIMV
-            m1kch.constant(float(i))
-            m1kch.get_samples(1)
-            m1kch.mode = pysmu.Mode.SIMV
+            smu.configure_dc(values=i, source_mode="i")
             time.sleep(0.1)
+
             keithley_data = keithley2400.query_ascii_values(":READ?")
             # reverse polarity as SMU's are seeing opposites
             keithley_i = -keithley_data[1]
-            m1k_data = m1kch.get_samples(m1k_samples)
-            m1k_is = [i for v, i in m1k_data[m1k_settling_delay:]]
-            m1k_i = sum(m1k_is) / len(m1k_is)
-            f.write(f"<{m1k_i:7.5f}, {keithley_i:6.4f}>\n")
-            cal_ch_sour_i.append([i, m1k_i, keithley_i])
-            print(f"set: {i}, ADALM1000: {m1k_i:6.4f}, Keithley: {keithley_i:7.5f}")
+
+            smu_i = smu.measure(measurement="dc")[channel][0][1]
+
+            f.write(f"<{smu_i:7.5f}, {keithley_i:6.4f}>\n")
+            cal_ch_sour_i.append([i, smu_i, keithley_i])
+            print(f"set: {i}, SMU: {smu_i:6.4f}, Keithley: {keithley_i:7.5f}")
 
         f.write("<\>\n\n")
-        cal_dict[m1k.serial][channel]["source_i"] = cal_ch_sour_i
+        cal_dict[dev_channel]["source_i"] = cal_ch_sour_i
 
     # turn off smu outputs
-    m1kch.mode = pysmu.Mode.SIMV
-    m1kch.constant(0)
-    m1kch.get_samples(1)
-    m1k.set_led(2)
+    smu.enable_output(False)
     keithley2400.write(":OUTP OFF")
 
-    print(f"CH{channel} source voltage calibration measurement complete!")
+    print(f"CH{channel + 1} source voltage calibration measurement complete!")
+
+
+def channel_cal(smu, channel, save_file, cal_dict):
+    """Run all calibration measurements for a channel.
+
+    Parameters
+    ----------
+    smu : m1k.smu
+        SMU object.
+    channel : int
+        SMU channel number.
+    save_file : str or pathlib.Path
+        Path to save file formatted for internal calibration.
+    cal_dict : dict
+        Calibration dictionary for external calibration.
+    """
+    input(
+        f"\nConnect Keithley HI to SMU CH {channel + 1} HI and Keithley LO to SMU CH "
+        + f"{channel + 1} GND. Press Enter when ready..."
+    )
+    measure_voltage_cal(smu, channel, save_file, cal_dict)
+    source_voltage_cal(smu, channel, save_file, cal_dict)
+    measure_current_cal(smu, channel, save_file, cal_dict)
+
+    if args.simv is True:
+        input(
+            f"\nConnect Keithley HI to SMU CH {channel + 1} HI and Keithley LO to SMU "
+            + f"CH {channel + 1} 2.5 V. Press Enter when ready..."
+        )
+        source_current_cal(smu, channel, save_file, cal_dict)
 
 
 # perform calibration measurements in exact order required for cal file
-input(
-    "\nConnect Keithley HI to ADALM1000 CH A and Keithley LO to ADALM1000 GND. Press "
-    + "Enter when ready..."
-)
-measure_voltage_cal("A")
-measure_current_cal("A")
-source_voltage_cal("A")
+t = time.time()
+for board in range(smu.num_boards):
+    board_serial = smu.get_channel_id(2 * board)
 
-if args.simv is True:
-    input(
-        "\nConnect Keithley HI to ADALM1000 CH A and Keithley LO to ADALM1000 2.5 V. "
-        + "Press Enter when ready..."
-    )
-    source_current_cal("A")
+    # m1k internal calibration file
+    save_file = cal_data_folder.joinpath(f"cal_{int(t)}_{board_serial}.txt")
 
-input(
-    "\nConnect Keithley HI to ADALM1000 CH B and Keithley LO to ADALM1000 GND. Press "
-    + "Enter when ready..."
-)
-measure_voltage_cal("B")
-measure_current_cal("B")
-source_voltage_cal("B")
+    # save calibration dictionary in same folder
+    save_file_dict = cal_data_folder.joinpath(f"cal_{int(t)}_{board_serial}.yaml")
+    cal_dict = {
+        "A": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
+        "B": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
+    }
 
-if args.simv is True:
-    input(
-        "\nConnect Keithley HI to ADALM1000 CH B and Keithley LO to ADALM1000 2.5 V. "
-        + "Press Enter when ready..."
-    )
-    source_current_cal("B")
+    # get the channel numbers as seen from hardware, i.e. 1-indexed
+    channel_A_num = 2 * board
+    channel_B_num = 2 * board + 1
 
-# export calibration dictionary to a yaml file
-with open(save_file_dict, "w") as f:
-    yaml.dump(cal_dict, f)
+    # run calibrations
+    channel_cal(smu, channel_A_num, save_file, cal_dict)
+    channel_cal(smu, channel_B_num, save_file, cal_dict)
 
-m1k.set_leds(1)
+    # export calibration dictionary to a yaml file
+    with open(save_file_dict, "w") as f:
+        yaml.dump(cal_dict, f)
+
+smu.set_leds(R=True)
 
 print("\nCalibration measurement complete!\n")
