@@ -130,5 +130,5 @@ dmypy.json
 
 .vscode/
 
-calibration/data/
+examples/calibration/data/
 examples/data/
