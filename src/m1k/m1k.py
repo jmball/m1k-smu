@@ -46,7 +46,7 @@ class smu:
             as the channel to use. This cannot be changed once the object has been
             instantiated.
         """
-        self.plf = plf
+        self._plf = plf
 
         if ch_per_board in [1, 2]:
             self._ch_per_board = ch_per_board
@@ -90,6 +90,33 @@ class smu:
         # if a session persists, subsequent attempts to create a new one may cause
         # a crash
         del self._session
+
+    @property
+    def plf(self):
+        """Get power line frequency in Hz."""
+        return self._plf
+
+    @plf.setter
+    def plf(self, plf):
+        """Set the power line frequency in Hz.
+
+        Also update NPLC integration samples, which depends on PLF.
+
+        Parameters
+        ----------
+        plf : float or int
+            Power line frequency in Hz.
+        """
+        self._plf = plf
+
+        if self._nplc is not None:
+            # convert nplc to integration time
+            nplc_time = (1 / self._plf) * self.nplc
+
+            self._nplc_samples = int(nplc_time * self.sample_rate)
+
+            # update total samples for each data point
+            self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
 
     @property
     def ch_per_board(self):
