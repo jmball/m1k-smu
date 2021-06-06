@@ -26,7 +26,7 @@ def worker():
         conn, addr = q.get()
 
         with conn:
-
+            # read incoming message
             buf = b""
             while True:
                 buf += conn.recv(1)
@@ -212,10 +212,10 @@ def worker():
 # initialise a queue to hold incoming connections
 q = queue.Queue()
 
-# start worker thread
+# start worker thread handle requests
 threading.Thread(target=worker, daemon=True).start()
 
-# load channel serial mapping
+# load channel serial mapping for SMU
 # TODO: load serial mapping
 serials = []
 

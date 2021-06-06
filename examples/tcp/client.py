@@ -257,6 +257,7 @@ class m1kTCPClient:
         source_mode : str
             Desired source mode during measurement: "v" for voltage, "i" for current.
         """
+        # strip whitespace from list, server uses spaces as separator for params in msg
         self._query(f"lst {str(values).replace(' ', '')} {dual} {source_mode}")
 
     def configure_dc(self, values=[], source_mode="v"):
@@ -271,6 +272,7 @@ class m1kTCPClient:
         source_mode : str
             Desired source mode during measurement: "v" for voltage, "i" for current.
         """
+        # strip whitespace from list, server uses spaces as separator for params in msg
         self._query(f"dc {str(values).replace(' ', '')} {source_mode}")
 
     def measure(self, measurement="dc", allow_chunking=False):
@@ -293,7 +295,7 @@ class m1kTCPClient:
         data : dict
             Data dictionary of the form: {channel: data}.
         """
-        return dict(self._query("meas {measurement} {allow_chunking}"))
+        return dict(self._query(f"meas {measurement} {allow_chunking}"))
 
     def enable_output(self, enable, channel=-1):
         """Enable/disable channel outputs.
