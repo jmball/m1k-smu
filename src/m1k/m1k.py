@@ -55,6 +55,12 @@ class smu:
                 f"Invalid number of channels per board: {ch_per_board}. Must be 1 or 2."
             )
 
+        # private attribute to hold pysmu session
+        self._session = None
+
+        # private attribute stating maximum buffer size of an ADALM1000
+        self._maximum_buffer_size = 100000
+
         # Init private containers for settings, which get populated on device
         # connection. Call the settings property to read settings. Use configure
         # methods to set them.
@@ -67,12 +73,6 @@ class smu:
         self._nplc_samples = 0
         self._settling_delay_samples = 0
         self._samples_per_datum = 0
-
-        # private attribute to hold pysmu session
-        self._session = None
-
-        # private attribute stating maximum buffer size of an ADALM1000
-        self._maximum_buffer_size = 100000
 
     def __enter__(self):
         """Enter the runtime context related to this object."""
@@ -122,6 +122,14 @@ class smu:
     def ch_per_board(self):
         """Get the number of channels per board in use."""
         return self._ch_per_board
+
+    @property
+    def connected(self):
+        """Get the connected state."""
+        if self._session is None:
+            return False
+        else:
+            return True
 
     @property
     def maximum_buffer_size(self):
@@ -228,63 +236,13 @@ class smu:
                 + "`None`."
             )
 
+        self._serials = serials
+
         for serial in serials:
             self._connect(serial)
 
-        # make a list of serials corresponding to every SMU channel, i.e. if using
-        # 2 channels per board, 2 channels will share the same serial
-        ch_serials = []
-        for serial in serials:
-            if self.ch_per_board == 1:
-                ch_serials += [serial]
-            elif self.ch_per_board == 2:
-                ch_serials += [serial, serial]
-
-        # find device index for each channel and init channel settings
-        for ch, serial in enumerate(ch_serials):
-            dev_ix = None
-            for ix, dev in enumerate(self._session.devices):
-                if dev.serial == serial:
-                    dev_ix = ix
-                    break
-
-            # init new device with default settings
-            self._configure_channel_default_settings(ch)
-
-            # store mapping between channel and device index in session
-            self._channel_settings[ch]["dev_ix"] = dev_ix
-            self._channel_settings[ch]["serial"] = serial
-
-            # store individual device channel
-            if self.ch_per_board == 1:
-                self.channel_settings[ch]["dev_channel"] = "A"
-            elif self.ch_per_board == 2:
-                if ch % 2 == 0:
-                    self.channel_settings[ch]["dev_channel"] = "A"
-                else:
-                    self.channel_settings[ch]["dev_channel"] = "B"
-
-            # disable output (should already be disabled but just to make sure)
-            self.enable_output(False, ch)
-
-            if self.ch_per_board == 1:
-                # channel B is only used for voltage measurement in four wire mode
-                self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
-
-        ### the order of actions below is critical ####
-
-        # set default output value
-        # this will reset all channel outputs to 0 V
-        self.configure_dc(values=0, source_mode="v")
-
-        # init global settings if not already set
-        # depends on session being created and device being connected and a
-        # measurement having been performed to properly init sample rate
-        if self._nplc is None:
-            self.nplc = 0.1
-
-        if self._settling_delay is None:
-            self.settling_delay = 0.005
+        # reset to default state
+        self.reset()
 
     def _connect(self, serial):
         """Connect a device to the session and configure it with default settings.
@@ -333,6 +291,66 @@ class smu:
         # TODO: calling _close() doesn't really destroy the session
         self._session._close()
         self._session = None
+
+    def reset(self):
+        """Reset to the default state."""
+        # reset channel and measurement params
+        self._channel_settings = {}
+        self._nplc_samples = 0
+        self._settling_delay_samples = 0
+        self._samples_per_datum = 0
+
+        # make a list of serials corresponding to every SMU channel, i.e. if using
+        # 2 channels per board, 2 channels will share the same serial
+        ch_serials = []
+        for serial in self._serials:
+            if self.ch_per_board == 1:
+                ch_serials += [serial]
+            elif self.ch_per_board == 2:
+                ch_serials += [serial, serial]
+
+        # find device index for each channel and init channel settings
+        for ch, serial in enumerate(ch_serials):
+            dev_ix = None
+            for ix, dev in enumerate(self._session.devices):
+                if dev.serial == serial:
+                    dev_ix = ix
+                    break
+
+            # init new device with default settings
+            self._configure_channel_default_settings(ch)
+
+            # store mapping between channel and device index in session
+            self._channel_settings[ch]["dev_ix"] = dev_ix
+            self._channel_settings[ch]["serial"] = serial
+
+            # store individual device channel
+            if self.ch_per_board == 1:
+                self.channel_settings[ch]["dev_channel"] = "A"
+            elif self.ch_per_board == 2:
+                if ch % 2 == 0:
+                    self.channel_settings[ch]["dev_channel"] = "A"
+                else:
+                    self.channel_settings[ch]["dev_channel"] = "B"
+
+            # disable output (should already be disabled but just to make sure)
+            self.enable_output(False, ch)
+
+            if self.ch_per_board == 1:
+                # channel B is only used for voltage measurement in four wire mode
+                self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
+
+        ### the order of actions below is critical ####
+
+        # set default output value
+        # this will reset all channel outputs to 0 V
+        self.configure_dc(values=0, source_mode="v")
+
+        # init global settings
+        # depends on session being created and device being connected and a
+        # measurement having been performed to properly init sample rate
+        self.nplc = 0.1
+        self.settling_delay = 0.005
 
     def use_external_calibration(self, channel, data=None):
         """Store measurement data used to calibrate a channel externally to the device.
