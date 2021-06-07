@@ -1,11 +1,15 @@
 """TCP server for SMU."""
 
 import ast
+import os
+import pathlib
 import queue
 import socket
 import threading
+import warnings
 
 import m1k
+import yaml
 
 # get primary ip address
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -16,12 +20,11 @@ s.close()
 HOST = ip
 PORT = 2101
 TERMCHAR = "\n"
+TERMCHAR_BYTES = TERMCHAR.encode()
 
 
 def worker():
     """Handle messages."""
-    TERMCHAR_BYTES = TERMCHAR.encode()
-
     while True:
         conn, addr = q.get()
 
@@ -81,10 +84,11 @@ def worker():
                 else:
                     resp = "ERROR: invalid message."
             elif msg_split[0] == "cal":
-                # TODO: fix cal data mapping
                 if len(msg_split) == 3:
                     if msg_split[1] == "ext":
-                        if int(msg_split[2]) == -1:
+                        if cal_data == {}:
+                            resp = "ERROR: external calibration data not available."
+                        elif int(msg_split[2]) == -1:
                             for ch, data in cal_data.items():
                                 smu.use_external_calibration(ch, data)
                         else:
@@ -209,23 +213,81 @@ def worker():
         q.task_done()
 
 
-# initialise a queue to hold incoming connections
-q = queue.Queue()
+# load channel serial mapping for SMU from file path stored in environment variable
+try:
+    serial_map_path = pathlib.Path(os.environ["SMU_SERIAL_MAP"])
+    with open(serial_map_path, "r") as f:
+        serial_map_dict = yaml.load(f, Loader=yaml.SafeLoader)
+    serials = [v for k, v in sorted(serial_map_dict.items())]
+except KeyError:
+    serials = None
+    warnings.warn(
+        "Environment variable 'SMU_SERIAL_MAP' not set. Using default pysmu serial "
+        + "mapping."
+    )
+except FileNotFoundError:
+    serials = None
+    warnings.warn(
+        f"Could not find serial mapping file: {serial_map_path}. Using default pysmu "
+        + "serial mapping."
+    )
 
-# start worker thread handle requests
-threading.Thread(target=worker, daemon=True).start()
+# init smu object
+try:
+    ch_per_board = pathlib.Path(os.environ["CH_PER_BOARD"])
+    smu = m1k.m1k(ch_per_board=ch_per_board)
+except KeyError:
+    smu = m1k.m1k()
+    ch_per_board = smu.ch_per_board
+    warnings.warn(
+        f"Environment variable 'CH_PER_BOARD' not set. Using {smu.ch_per_board} "
+        + "channels per board."
+    )
 
-# load channel serial mapping for SMU
-# TODO: load serial mapping
-serials = []
-
-# connect to smu
-smu = m1k.m1k()
+# connect boards
 smu.connect(serials)
 
 # load calibration data
-# TODO: load cal dict
-cal_data = {}
+try:
+    cal_data_folder = pathlib.Path(os.environ["CAL_DATA_FOLDER"])
+
+    cal_data = {}
+    for board, serial in enumerate(smu.serials):
+        # get list of cal files for given serial
+        fs = [f for f in cal_data_folder.glob(f"cal_*_{serial}.yaml")]
+
+        # pick latest one
+        fs.reverse()
+        cf = fs[0]
+
+        # load cal data
+        with open(cf, "r") as f:
+            data = yaml.load(f, Loader=yaml.SafeLoader)
+
+        # add data to cal dict
+        if ch_per_board == 1:
+            cal_data[board] = data
+        elif ch_per_board == 2:
+            cal_data[2 * board] = data
+            cal_data[2 * board + 1] = data
+except KeyError:
+    cal_data = {}
+    warnings.warn(
+        "Environment variable 'CAL_DATA_FOLDER' not set so external calibration data "
+        + "cannot be loaded."
+    )
+except IndexError:
+    cal_data = {}
+    warnings.warn(
+        f"Could not find calibration file for serial: {serial}. External calibration "
+        + "data not loaded."
+    )
+
+# initialise a queue to hold incoming connections
+q = queue.Queue()
+
+# start worker thread to handle requests
+threading.Thread(target=worker, daemon=True).start()
 
 # start server
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

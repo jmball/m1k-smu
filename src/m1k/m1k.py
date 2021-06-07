@@ -58,6 +58,9 @@ class smu:
         # private attribute to hold pysmu session
         self._session = None
 
+        # private attribute to hold device serials
+        self._serials = None
+
         # private attribute stating maximum buffer size of an ADALM1000
         self._maximum_buffer_size = 100000
 
@@ -130,6 +133,11 @@ class smu:
             return False
         else:
             return True
+
+    @property
+    def serials(self):
+        """Get list of serials."""
+        return self._serials
 
     @property
     def maximum_buffer_size(self):
