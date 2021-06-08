@@ -32,6 +32,17 @@ class m1kTCPClient:
 
         self._query(f"plf {plf}")
 
+    def __enter__(self):
+        """Enter the runtime context related to this object."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Exit the runtime context related to this object.
+
+        Make sure everything gets cleaned up properly.
+        """
+        pass
+
     @property
     def TERMCHAR(self):
         """Get termination character."""
@@ -82,17 +93,6 @@ class m1kTCPClient:
     def reset(self):
         """Reset SMU paramters to default."""
         self._query("rst")
-
-    def __enter__(self):
-        """Enter the runtime context related to this object."""
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """Exit the runtime context related to this object.
-
-        Make sure everything gets cleaned up properly.
-        """
-        pass
 
     @property
     def plf(self):
