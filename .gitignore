@@ -132,3 +132,5 @@ dmypy.json
 
 examples/calibration/data/
 examples/data/
+examples/board_mapping.yaml
+examples/ch_per_board.yaml
