@@ -1178,6 +1178,7 @@ class smu:
                         # the other channel is off so ok to turn off blue LED
                         self.set_leds(channel=ch, G=True)
 
+            print(dev_ix, dev_channel)
             self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
     def get_channel_id(self, channel):
