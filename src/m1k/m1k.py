@@ -289,9 +289,9 @@ class smu:
         so is forbidden.
         """
         self.enable_output(False)
+        self.set_leds(R=True)
 
         for dev in self._session.devices:
-            dev.set_led(1)
             self._session.remove(dev)
 
         self._channel_settings = {}
