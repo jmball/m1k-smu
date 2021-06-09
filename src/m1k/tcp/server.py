@@ -7,9 +7,12 @@ import queue
 import socket
 import threading
 import warnings
+import sys
 
-import m1k
 import yaml
+
+sys.path.insert(1, str(pathlib.Path.cwd().parent.parent))
+import m1k.m1k as m1k
 
 # get primary ip address
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
