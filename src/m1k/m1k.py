@@ -722,21 +722,22 @@ class smu:
         # enable outputs prior to run-read as required to update the device value
         # doing this in a separate loop after the writes minimises the time the
         # outputs are enabled before the run, which triggers the change in outputs
-        for ch in range(len(values)):
-            dev_ix = self._channel_settings[ch]["dev_ix"]
-            dev_channel = self._channel_settings[ch]["dev_channel"]
-            source_mode = self._channel_settings[ch]["source_mode"]
-            if self._channel_settings[ch]["four_wire"] is True:
-                if source_mode == "v":
-                    mode = pysmu.Mode.SVMI_SPLIT
-                else:
-                    mode = pysmu.Mode.SIMV_SPLIT
-            else:
-                if source_mode == "v":
-                    mode = pysmu.Mode.SVMI
-                else:
-                    mode = pysmu.Mode.SIMV
-            self._session.devices[dev_ix].channels[dev_channel].mode = mode
+        self.enable_output(True)
+        # for ch in range(len(values)):
+        # dev_ix = self._channel_settings[ch]["dev_ix"]
+        # dev_channel = self._channel_settings[ch]["dev_channel"]
+        # source_mode = self._channel_settings[ch]["source_mode"]
+        # if self._channel_settings[ch]["four_wire"] is True:
+        #     if source_mode == "v":
+        #         mode = pysmu.Mode.SVMI_SPLIT
+        #     else:
+        #         mode = pysmu.Mode.SIMV_SPLIT
+        # else:
+        #     if source_mode == "v":
+        #         mode = pysmu.Mode.SVMI
+        #     else:
+        #         mode = pysmu.Mode.SIMV
+        # self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
         # run and read one sample for all channels to update output values
         self._session.run(1)
