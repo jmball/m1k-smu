@@ -234,8 +234,10 @@ except FileNotFoundError:
 
 # init smu object
 try:
-    ch_per_board = pathlib.Path(os.environ["CH_PER_BOARD"])
-    smu = m1k.m1k(ch_per_board=ch_per_board)
+    ch_per_board_path = pathlib.Path(os.environ["CH_PER_BOARD"])
+    with open(ch_per_board_path, "r") as f:
+        ch_per_board_dict = yaml.load(f, Loader=yaml.SafeLoader)
+    smu = m1k.m1k(ch_per_board=ch_per_board_dict["ch_per_board"])
 except KeyError:
     smu = m1k.m1k()
     ch_per_board = smu.ch_per_board
