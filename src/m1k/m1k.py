@@ -716,7 +716,7 @@ class smu:
             values = self._channel_settings[ch]["dc_values"]
 
             # write new value to the channel
-            self._session.devices[dev_ix].flush(channel=0, read=True)
+            # self._session.devices[dev_ix].flush(channel=0, read=True)
             self._session.devices[dev_ix].channels[dev_channel].write(values)
 
         # enable outputs prior to run-read as required to update the device value
