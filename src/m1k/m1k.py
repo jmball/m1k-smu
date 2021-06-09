@@ -705,8 +705,6 @@ class smu:
 
             self._channel_settings[ch]["dc_values"] = [value]
 
-        print("writing")
-
         # write values for all channels
         start_modes = []
         for ch in range(self.num_channels):
@@ -718,7 +716,7 @@ class smu:
             values = self._channel_settings[ch]["dc_values"]
 
             # write new value to the channel
-            # self._session.devices[dev_ix].flush(channel=0, read=True)
+            self._session.devices[dev_ix].flush(channel=0, read=True)
             self._session.devices[dev_ix].channels[dev_channel].write(values)
 
         # enable outputs prior to run-read as required to update the device value
@@ -741,11 +739,8 @@ class smu:
             self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
         # run and read one sample for all channels to update output values
-        print("running")
         self._session.run(1)
-
-        print("reading")
-        d = self._session.read(1)
+        self._session.read(1)
 
         # getting a sample automatically turns off the outputs so turn them back
         # on again in the correct mode if they were already on
