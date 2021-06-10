@@ -84,13 +84,8 @@ class smu:
 
         Make sure everything gets cleaned up properly.
         """
-        # disconnect all devices
+        # disconnect all devices and destroy session
         self.disconnect()
-
-        # destroy the session
-        # if a session persists, subsequent attempts to create a new one may cause
-        # a crash
-        del self._session
 
     @property
     def plf(self):
@@ -213,7 +208,8 @@ class smu:
     def connect(self, serials=None):
         """Connect one or more devices (channels) to the session (SMU).
 
-        WARNING: this method can only be called once!
+        WARNING: this method cannot be called again if a session already exists. To
+        make a new connection run `disconnect()` first to destroy the current session.
 
         Parameters
         ----------
@@ -230,7 +226,7 @@ class smu:
             self._session = pysmu.Session(add_all=False)
             self._session.scan()
         else:
-            raise RuntimeError("The connect method may only be called once.")
+            raise RuntimeError("Cannot connect more devices to the existing session.")
 
         if serials is None:
             serials = [dev.serial for dev in self._session.available_devices]
@@ -371,18 +367,22 @@ class smu:
         Disconnecting individual devices would change the remaining channel's indices
         so is forbidden.
         """
+        # disable outputs and reset LEDs
         self.enable_output(False)
         self.set_leds(R=True)
 
-        try:
-            self._session.remove(dev)
-        except pysmu.SessionError:
-            self._session.remove(dev, True)
+        # remove devices from session
+        for dev in self._session.devices:
+            try:
+                self._session.remove(dev)
+            except pysmu.SessionError:
+                self._session.remove(dev, True)
 
+        # reset channel settings
         self._channel_settings = {}
 
-        # TODO: calling _close() doesn't really destroy the session
-        self._session._close()
+        # destroy the session
+        del self._session
         self._session = None
 
     def use_external_calibration(self, channel, data=None):
