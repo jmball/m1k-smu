@@ -86,16 +86,20 @@ rigol_baud = args.rigol_baud
 rigol_flow_control = flow_controls[args.rigol_flow]
 rigol_term_char = term_chars[args.rigol_term]
 
-dmm = dm3058()
-dmm.connect(
-    dmm_address,
-    reset=True,
-    **{
+rigol_kwargs = {}
+if dmm_address.startswith("ASRL"):
+    rigol_kwargs = {
         "baud_rate": rigol_baud,
         "flow_control": rigol_flow_control,
         "write_termination": rigol_term_char,
         "read_termination": rigol_term_char,
-    },
+    }
+
+dmm = dm3058.dm3058()
+dmm.connect(
+    dmm_address,
+    reset=True,
+    **rigol_kwargs,
 )
 print(f"Rigol DM3058E ID: {dmm.get_id()}")
 print("Connected!")
@@ -103,16 +107,11 @@ print("Connected!")
 print("\nConnecting to Rigol DP821A PSU...")
 psu_address = args.psu_address
 
-psu = dp800()
+psu = dp800.dp800()
 psu.connect(
     psu_address,
     reset=True,
-    **{
-        "baud_rate": rigol_baud,
-        "flow_control": rigol_flow_control,
-        "write_termination": rigol_term_char,
-        "read_termination": rigol_term_char,
-    },
+    **rigol_kwargs,
 )
 print(f"Rigol DP821A ID: {psu.get_id()}")
 print("Connected!")
