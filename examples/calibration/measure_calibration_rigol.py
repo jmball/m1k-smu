@@ -60,6 +60,12 @@ parser.add_argument(
     default=False,
     help="Include source current, measure voltage calibration. Requires 2.5 V input.",
 )
+parser.add_argument(
+    "--delay",
+    type=float,
+    default=0.1,
+    help="Delay in seconds between setting and reading values.",
+)
 args = parser.parse_args()
 
 cal = input(
@@ -70,6 +76,12 @@ cal = input(
 if cal != "y":
     print("\nCalibration measurement aborted!.\n")
     sys.exit()
+
+# number of dmm measurements to throw away while settling
+dummys = 1
+
+# number of dmm measurements to average
+avs = 1
 
 # save calibration files in data folder
 cwd = pathlib.Path.cwd()
@@ -98,7 +110,7 @@ if dmm_address.startswith("ASRL"):
 dmm = dm3058.dm3058()
 dmm.connect(
     dmm_address,
-    reset=True,
+    reset=False,
     **rigol_kwargs,
 )
 print(f"Rigol DM3058E ID: {dmm.get_id()}")
@@ -110,7 +122,7 @@ psu_address = args.psu_address
 psu = dp800.dp800()
 psu.connect(
     psu_address,
-    reset=True,
+    reset=False,
     **rigol_kwargs,
 )
 print(f"Rigol DP821A ID: {psu.get_id()}")
@@ -201,7 +213,7 @@ def measure_voltage_cal(smu, channel, save_file):
     dmm.set_reading_rate("voltage", "dc", "S")
 
     # set psu to source zero volts and enable output
-    max_current = 0.01
+    max_current = 0.05
     psu.set_apply(channel=1, voltage=0, current=max_current)
     psu.set_output_enable(True, 1)
 
@@ -220,16 +232,19 @@ def measure_voltage_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_meas_v = []
         for v in cal_voltages:
-            psu.set_apply(channel=1, voltage=v, current=max_current)
-            time.sleep(0.1)
-            dmm_v = dmm.measure("voltage", "dc")
+            psu.set_apply(channel=1, voltage=float(v), current=max_current)
+            time.sleep(args.delay)
+
+            [dmm.measure("voltage", "dc") for _ in range(dummys)]
+            dmm_vs = [dmm.measure("voltage", "dc") for _ in range(avs)]
+            dmm_v = sum(dmm_vs) / len(dmm_vs)
 
             smu_v = smu.measure(measurement="dc")[channel][0][0]
 
             f.write(f"<{dmm_v:6.4f}, {smu_v:7.5f}>\n")
 
             cal_ch_meas_v.append([dmm_v, smu_v])
-            print(f"DMM: {dmm_v:6.4f}, SMU: {smu_v:7.5f}")
+            print(f"set: {v}, DMM: {dmm_v:7.5f}, SMU: {smu_v:7.5f}")
 
         f.write("<\>\n\n")
         cal_dict[dev_channel]["meas_v"] = cal_ch_meas_v
@@ -270,7 +285,7 @@ def measure_current_cal(smu, channel, save_file):
     smu.enable_output(True)
 
     # set psu to source 0 A and enable output
-    max_voltage = 5.1
+    max_voltage = 5.2
     psu.set_apply(channel=1, voltage=max_voltage, current=0)
     psu.set_output_enable(True, 1)
 
@@ -286,18 +301,20 @@ def measure_current_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_meas_i = []
         for i in cal_currents_0:
-            psu.set_apply(channel=1, voltage=max_voltage, current=i)
-            time.sleep(0.1)
+            psu.set_apply(channel=1, voltage=max_voltage, current=float(i))
+            time.sleep(args.delay)
 
             # reverse polarity as SMU's are seeing opposites
-            dmm_i = -dmm.measure("current", "dc")
+            [dmm.measure("current", "dc") for _ in range(dummys)]
+            dmm_is = [-dmm.measure("current", "dc") for _ in range(avs)]
+            dmm_i = sum(dmm_is) / len(dmm_is)
 
             smu_i = smu.measure(measurement="dc")[channel][0][1]
 
             f.write(f"<{dmm_i:6.4f}, {smu_i:7.5f}>\n")
 
             cal_ch_meas_i.append([dmm_i, smu_i])
-            print(f"DMM: {dmm_i:6.4f}, SMU: {smu_i:7.5f}")
+            print(f"set: {i}, DMM: {dmm_i:7.5f}, SMU: {smu_i:7.5f}")
 
         psu.set_apply(channel=1, voltage=max_voltage, current=0)
         input(
@@ -305,18 +322,20 @@ def measure_current_cal(smu, channel, save_file):
         )
 
         for i in cal_currents_1:
-            psu.set_apply(channel=1, voltage=max_voltage, current=i)
-            time.sleep(0.1)
+            psu.set_apply(channel=1, voltage=max_voltage, current=float(i))
+            time.sleep(args.delay)
 
             # reverse polarity as SMU's are seeing opposites
-            dmm_i = -dmm.measure("current", "dc")
+            [dmm.measure("current", "dc") for _ in range(dummys)]
+            dmm_is = [-dmm.measure("current", "dc") for _ in range(avs)]
+            dmm_i = sum(dmm_is) / len(dmm_is)
 
             smu_i = smu.measure(measurement="dc")[channel][0][1]
 
             f.write(f"<{dmm_i:6.4f}, {smu_i:7.5f}>\n")
 
             cal_ch_meas_i.append([dmm_i, smu_i])
-            print(f"DMM: {dmm_i:6.4f}, SMU: {smu_i:7.5f}")
+            print(f"set: {i}, DMM: {dmm_i:7.5f}, SMU: {smu_i:7.5f}")
 
         f.write("<\>\n\n")
         cal_dict[dev_channel]["meas_i"] = cal_ch_meas_i
@@ -369,16 +388,18 @@ def source_voltage_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_sour_v = []
         for v in cal_voltages:
-            smu.configure_dc(values=v, source_mode="v")
-            time.sleep(0.1)
+            smu.configure_dc(values=float(v), source_mode="v")
+            time.sleep(args.delay)
 
-            dmm_v = dmm.measure("voltage", "dc")
+            [dmm.measure("voltage", "dc") for _ in range(dummys)]
+            dmm_vs = [dmm.measure("voltage", "dc") for _ in range(avs)]
+            dmm_v = sum(dmm_vs) / len(dmm_vs)
 
             smu_v = smu.measure(measurement="dc")[channel][0][0]
 
             f.write(f"<{smu_v:7.5f}, {dmm_v:6.4f}>\n")
             cal_ch_sour_v.append([v, smu_v, dmm_v])
-            print(f"SMU: {smu_v:7.5f}, DMM: {dmm_v:6.4f}")
+            print(f"set: {i}, SMU: {smu_v:7.5f}, DMM: {dmm_v:7.5f}")
 
         f.write("<\>\n\n")
         cal_dict[dev_channel]["source_v"] = cal_ch_sour_v
@@ -428,17 +449,19 @@ def source_current_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_sour_i = []
         for i in cal_currents_source:
-            smu.configure_dc(values=i, source_mode="i")
-            time.sleep(0.1)
+            smu.configure_dc(values=float(i), source_mode="i")
+            time.sleep(args.delay)
 
             # reverse polarity as SMU's are seeing opposites
-            dmm_i = -dmm.measure("current", "dc")
+            [dmm.measure("current", "dc") for _ in range(dummys)]
+            dmm_is = [-dmm.measure("current", "dc") for _ in range(avs)]
+            dmm_i = sum(dmm_is) / len(dmm_is)
 
             smu_i = smu.measure(measurement="dc")[channel][0][1]
 
             f.write(f"<{smu_i:7.5f}, {dmm_i:6.4f}>\n")
             cal_ch_sour_i.append([i, smu_i, dmm_i])
-            print(f"set: {i}, SMU: {smu_i:6.4f}, DMM: {dmm_i:7.5f}")
+            print(f"set: {i}, SMU: {smu_i:7.5f}, DMM: {dmm_i:7.5f}")
 
         f.write("<\>\n\n")
         cal_dict[dev_channel]["source_i"] = cal_ch_sour_i

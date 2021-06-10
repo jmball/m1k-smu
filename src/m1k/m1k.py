@@ -814,6 +814,13 @@ class smu:
         # get interable of channels now to save repeated lookups later
         channels = range(self.num_channels)
 
+        # get current mode to determine whether output needs to be re-enabled
+        start_modes = []
+        for ch in channels:
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+            start_modes.append(self._session.devices[dev_ix].channels[dev_channel].mode)
+
         # build samples list accounting for nplc and settling delay
         ch_samples = {}
         for ch in channels:
@@ -917,9 +924,15 @@ class smu:
                 raw_data.append(self._session.read(len(chunk), 20000))
 
         # re-enable outputs if required
-        for ch in channels:
+        for ch, start_mode in enumerate(start_modes):
             if self._channel_settings[ch]["auto_off"] is False:
-                self.enable_output(True, ch)
+                if start_mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                    self.enable_output(True, ch)
+                else:
+                    # although output turns off after measurement run, it doesn't
+                    # re-set the channel mode in the library to HI_Z so force it manually
+                    # here
+                    self.enable_output(False, ch)
             else:
                 # turn off output leds and re-set mode
                 self.enable_output(False, ch)
