@@ -7,7 +7,7 @@ import socket
 class m1kTCPClient:
     """TCP client to TCP server for SMU."""
 
-    def __init__(self, HOST, PORT, TERMCHAR="\n", plf=50):
+    def __init__(self, HOST, PORT, TERMCHAR="\n", timeout=30, plf=50):
         """Construct TCP client for SMU.
 
         Parameters
@@ -29,6 +29,7 @@ class m1kTCPClient:
         self.PORT = PORT
         self._TERMCHAR = TERMCHAR
         self._TERMCHAR_BYTES = TERMCHAR.encode()
+        self.timeout = timeout
 
         self._query(f"plf {plf}")
 
@@ -73,6 +74,8 @@ class m1kTCPClient:
             Instrument response.
         """
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(self.timeout)
+
             s.connect((self.HOST, self.PORT))
 
             s.sendall(msg.encode() + self.TERMCHAR_BYTES)
