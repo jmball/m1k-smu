@@ -411,7 +411,7 @@ class smu:
         for sub_ch, data_dict in data.items():
             external_cal[sub_ch] = {}
             for meas, data in data_dict.items():
-                if meas.startswith("meas") is True:
+                if (meas.startswith("meas") is True) and (data is not None):
                     x = [row[1] for row in data]
                     y = [row[0] for row in data]
                     # linearly interpolate data with linear extrapolation for data
@@ -424,7 +424,7 @@ class smu:
                         fill_value="extrapolate",
                     )
                     external_cal[sub_ch][meas] = f_int
-                elif meas.startswith("source") is True:
+                elif (meas.startswith("source") is True) and (data is not None):
                     x = [row[1] for row in data]
                     y = [row[2] for row in data]
                     z = [row[0] for row in data]
@@ -447,6 +447,8 @@ class smu:
                     external_cal[sub_ch][meas] = {}
                     external_cal[sub_ch][meas]["meas"] = f_int_meas
                     external_cal[sub_ch][meas]["set"] = f_int_set
+                elif data is None:
+                    pass
                 else:
                     raise ValueError(
                         f"Invalid calibration key: {meas}. Must be 'meas_v', 'meas_i',"
