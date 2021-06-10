@@ -399,7 +399,7 @@ def source_voltage_cal(smu, channel, save_file):
 
             f.write(f"<{smu_v:7.5f}, {dmm_v:6.4f}>\n")
             cal_ch_sour_v.append([v, smu_v, dmm_v])
-            print(f"set: {i}, SMU: {smu_v:7.5f}, DMM: {dmm_v:7.5f}")
+            print(f"set: {v}, SMU: {smu_v:7.5f}, DMM: {dmm_v:7.5f}")
 
         f.write("<\>\n\n")
         cal_dict[dev_channel]["source_v"] = cal_ch_sour_v
