@@ -673,7 +673,7 @@ class smu:
             if len(values) != num_channels:
                 raise ValueError(
                     "All channel values must be set simulateneously. The are "
-                    + f"{self.num_channels} channels connected but only {len(values)} "
+                    + f"{self.num_channels} channels connected but {len(values)} "
                     + "values were given."
                 )
         elif (t == float) or (t == int):
