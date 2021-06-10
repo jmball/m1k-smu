@@ -1,13 +1,11 @@
 """Source measure unit based on the ADALM1000."""
 
-import copy
 import math
 import time
 import warnings
 
 import pysmu
-import scipy as sp
-from scipy.interpolate import interp1d
+import scipy.interpolate
 
 
 class smu:
@@ -247,12 +245,12 @@ class smu:
         self._serials = serials
 
         for serial in serials:
-            self._connect(serial)
+            self._connect_board(serial)
 
         # reset to default state
         self.reset()
 
-    def _connect(self, serial):
+    def _connect_board(self, serial):
         """Connect a device to the session and configure it with default settings.
 
         Parameters
@@ -282,32 +280,42 @@ class smu:
         # it looks like a new device so add it
         self._session.add(new_dev)
 
-    def disconnect(self):
-        """Disconnect all devices from the session.
-
-        Disconnecting individual devices would change the remaining channel's indices
-        so is forbidden.
-        """
-        self.enable_output(False)
-        self.set_leds(R=True)
-
-        for dev in self._session.devices:
-            self._session.remove(dev)
-
-        self._channel_settings = {}
-
-        # TODO: calling _close() doesn't really destroy the session
-        self._session._close()
-        self._session = None
-
     def reset(self):
-        """Reset to the default state."""
+        """Reset all channels to the default state."""
         # reset channel and measurement params
         self._channel_settings = {}
         self._nplc_samples = 0
         self._settling_delay_samples = 0
         self._samples_per_datum = 0
 
+        # get board mapping
+        self._map_boards()
+
+        # set outputs
+        for ch in range(self.num_channels):
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            # disable output (should already be disabled but just to make sure)
+            self.enable_output(False, ch)
+
+            if self.ch_per_board == 1:
+                # if 1 channel per board, channel B is only used for voltage
+                # measurement in four wire mode
+                self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
+
+        ### the order of actions below is critical ####
+
+        # set default output value
+        # this will reset all channel outputs to 0 V
+        self.configure_dc(values=0, source_mode="v")
+
+        # init global settings
+        # depends on session being created and device being connected and a
+        # measurement having been performed to properly init sample rate
+        self.nplc = 0.1
+        self.settling_delay = 0.005
+
+    def _map_boards(self):
+        """Map boards to channels in channel settings."""
         # make a list of serials corresponding to every SMU channel, i.e. if using
         # 2 channels per board, 2 channels will share the same serial
         ch_serials = []
@@ -341,24 +349,41 @@ class smu:
                 else:
                     self.channel_settings[ch]["dev_channel"] = "B"
 
-            # disable output (should already be disabled but just to make sure)
-            self.enable_output(False, ch)
+    def _reconnect(self):
+        """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
+        # remove all devices from the session
+        for dev in self._session.devices:
+            try:
+                self._session.remove(dev)
+            except pysmu.SessionError:
+                self._session.remove(dev, True)
 
-            if self.ch_per_board == 1:
-                # channel B is only used for voltage measurement in four wire mode
-                self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
+        # add devices to session again
+        for serial in self._serials:
+            self._connect_board(serial)
 
-        ### the order of actions below is critical ####
+        # update board mapping
+        self._map_boards()
 
-        # set default output value
-        # this will reset all channel outputs to 0 V
-        self.configure_dc(values=0, source_mode="v")
+    def disconnect(self):
+        """Disconnect all devices from the session.
 
-        # init global settings
-        # depends on session being created and device being connected and a
-        # measurement having been performed to properly init sample rate
-        self.nplc = 0.1
-        self.settling_delay = 0.005
+        Disconnecting individual devices would change the remaining channel's indices
+        so is forbidden.
+        """
+        self.enable_output(False)
+        self.set_leds(R=True)
+
+        try:
+            self._session.remove(dev)
+        except pysmu.SessionError:
+            self._session.remove(dev, True)
+
+        self._channel_settings = {}
+
+        # TODO: calling _close() doesn't really destroy the session
+        self._session._close()
+        self._session = None
 
     def use_external_calibration(self, channel, data=None):
         """Store measurement data used to calibrate a channel externally to the device.
@@ -416,7 +441,7 @@ class smu:
                     y = [row[0] for row in data]
                     # linearly interpolate data with linear extrapolation for data
                     # outside measured range
-                    f_int = sp.interpolate.interp1d(
+                    f_int = scipy.interpolate.interp1d(
                         x,
                         y,
                         kind="linear",
@@ -429,7 +454,7 @@ class smu:
                     y = [row[2] for row in data]
                     z = [row[0] for row in data]
                     # interpolation for returned values from device
-                    f_int_meas = sp.interpolate.interp1d(
+                    f_int_meas = scipy.interpolate.interp1d(
                         x,
                         y,
                         kind="linear",
@@ -437,7 +462,7 @@ class smu:
                         fill_value="extrapolate",
                     )
                     # interpolation for setting the device output
-                    f_int_set = sp.interpolate.interp1d(
+                    f_int_set = scipy.interpolate.interp1d(
                         y,
                         z,
                         kind="linear",
