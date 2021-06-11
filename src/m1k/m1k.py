@@ -374,6 +374,8 @@ class smu:
 
     def _reconnect(self):
         """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
+        input("Attempting reconnect. Press Enter to continue...")
+
         # remove all devices from the session
         for dev in self._session.devices:
             try:
