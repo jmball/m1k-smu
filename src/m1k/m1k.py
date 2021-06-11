@@ -75,6 +75,9 @@ class smu:
         self._settling_delay_samples = 0
         self._samples_per_datum = 0
 
+        # some functions allow retries if errors occur
+        self._retries = 3
+
     def __enter__(self):
         """Enter the runtime context related to this object."""
         return self
@@ -277,7 +280,11 @@ class smu:
         self._session.add(new_dev)
 
     def reset(self):
-        """Reset all channels to the default state."""
+        """Reset all channels to the default state.
+
+        This function will attempt retries if `pysmu.DeviceError`'s occur when setting
+        channel B's for four-wire mode when there's only 1 channel per board.
+        """
         # reset channel and measurement params
         self._channel_settings = {}
         self._nplc_samples = 0
@@ -296,9 +303,29 @@ class smu:
             if self.ch_per_board == 1:
                 # if 1 channel per board, channel B is only used for voltage
                 # measurement in four wire mode
-                self._session.devices[dev_ix].channels["B"].mode = pysmu.Mode.HI_Z_SPLIT
+                # allow retries
+                err = None
+                for attempt in range(1, self._retries + 1):
+                    try:
+                        self._session.devices[dev_ix].channels[
+                            "B"
+                        ].mode = pysmu.Mode.HI_Z_SPLIT
+                        break
+                    except pysmu.DeviceError as e:
+                        if attempt == self._retries:
+                            err = e
+                        else:
+                            warnings.warn(
+                                "`pysmu.DeviceError` occurred, attempting to reconnect"
+                                + " and retry."
+                            )
+                            self._reconnect()
+                            continue
 
-        ### the order of actions below is critical ####
+                if err is not None:
+                    raise err
+
+        # ---the order of actions below is critical---
 
         # set default output value
         # this will reset all channel outputs to 0 V
@@ -747,24 +774,9 @@ class smu:
             self._session.devices[dev_ix].channels[dev_channel].write(values)
 
         # enable outputs prior to run-read as required to update the device value
-        # doing this in a separate loop after the writes minimises the time the
-        # outputs are enabled before the run, which triggers the change in outputs
+        # doing this after the write loop minimises the time the outputs are enabled
+        # before the run, which triggers the change in outputs
         self.enable_output(True)
-        # for ch in range(len(values)):
-        # dev_ix = self._channel_settings[ch]["dev_ix"]
-        # dev_channel = self._channel_settings[ch]["dev_channel"]
-        # source_mode = self._channel_settings[ch]["source_mode"]
-        # if self._channel_settings[ch]["four_wire"] is True:
-        #     if source_mode == "v":
-        #         mode = pysmu.Mode.SVMI_SPLIT
-        #     else:
-        #         mode = pysmu.Mode.SIMV_SPLIT
-        # else:
-        #     if source_mode == "v":
-        #         mode = pysmu.Mode.SVMI
-        #     else:
-        #         mode = pysmu.Mode.SIMV
-        # self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
         # run and read one sample for all channels to update output values
         self._session.run(1)
@@ -783,6 +795,9 @@ class smu:
 
     def measure(self, measurement="dc", allow_chunking=False):
         """Perform the configured sweep or dc measurements for all channels.
+
+        This function will attempt retries if `pysmu.SessionError` and/or
+        `pysmu.DeviceError`'s occur.
 
         Parameters
         ----------
@@ -807,7 +822,34 @@ class smu:
                 f"Invalid measurement mode: {measurement}. Must be 'dc' or 'sweep'."
             )
 
-        raw_data, t0 = self._measure(measurement, allow_chunking)
+        err = None
+        for attempt in range(1, self._retries + 1):
+            try:
+                raw_data, t0 = self._measure(measurement, allow_chunking)
+                break
+            except pysmu.SessionError as e:
+                if attempt == self._retries:
+                    err = e
+                else:
+                    warnings.warn(
+                        "`pysmu.SessionError` occurred, attempting to reconnect and "
+                        + "retry."
+                    )
+                    self._reconnect()
+                    continue
+            except pysmu.DeviceError as e:
+                if attempt == self._retries:
+                    err = e
+                else:
+                    warnings.warn(
+                        "`pysmu.DeviceError` occurred, attempting to reconnect and "
+                        + "retry."
+                    )
+                    self._reconnect()
+                    continue
+
+        if err is not None:
+            raise err
 
         # re-format raw data to: (voltage, current, timestamp, status)
         # and process to account for nplc and settling delay if required
@@ -1168,6 +1210,39 @@ class smu:
     def enable_output(self, enable, channel=None):
         """Enable/disable channel outputs.
 
+        This function will attempt retries if `pysmu.DeviceError`'s occur.
+
+        Paramters
+        ---------
+        enable : bool
+            Turn on (`True`) or turn off (`False`) channel outputs.
+        channel : int or None
+            Channel number (0-indexed). If `None`, apply to all channels.
+        """
+        err = None
+        for attempt in range(1, self._retries + 1):
+            try:
+                self._enable_output(enable, channel)
+                break
+            except pysmu.DeviceError as e:
+                if attempt == self._retries:
+                    err = e
+                else:
+                    warnings.warn(
+                        "`pysmu.DeviceError` occurred, attempting to reconnect and "
+                        + "retry."
+                    )
+                    self._reconnect()
+                    continue
+
+        if err is not None:
+            raise err
+
+    def _enable_output(self, enable, channel=None):
+        """Enable/disable channel outputs.
+
+        This function will attempt retries if `pysmu.DeviceError`'s occur.
+
         Paramters
         ---------
         enable : bool
@@ -1215,7 +1290,10 @@ class smu:
                             self._session.devices[dev_ix].channels["A"].mode
                         )
 
-                    if other_channel_mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                    if other_channel_mode in [
+                        pysmu.Mode.HI_Z,
+                        pysmu.Mode.HI_Z_SPLIT,
+                    ]:
                         # the other channel is off so ok to turn off blue LED
                         self.set_leds(channel=ch, G=True)
 
