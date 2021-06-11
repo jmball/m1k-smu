@@ -316,8 +316,8 @@ class smu:
                             err = e
                         else:
                             warnings.warn(
-                                "`pysmu.DeviceError` occurred, attempting to reconnect"
-                                + " and retry."
+                                "`pysmu.DeviceError` occurred setting channel B for "
+                                + "four-wire mode, attempting to reconnect and retry."
                             )
                             self._reconnect()
                             continue
@@ -382,6 +382,13 @@ class smu:
                 self._session.remove(dev)
             except pysmu.SessionError:
                 self._session.remove(dev, True)
+
+        # destroy the session
+        del self._session
+        self._session = None
+
+        # create a new one
+        self._session = pysmu.Session(add_all=False)
 
         # scan for available devices, one or more has probably changed adress
         self._session.scan()
@@ -837,8 +844,8 @@ class smu:
                     err = e
                 else:
                     warnings.warn(
-                        "`pysmu.SessionError` occurred, attempting to reconnect and "
-                        + "retry."
+                        "`pysmu.SessionError` occurred during `measure()`, attempting "
+                        + "to reconnect and retry."
                     )
                     self._reconnect()
                     continue
@@ -847,8 +854,8 @@ class smu:
                     err = e
                 else:
                     warnings.warn(
-                        "`pysmu.DeviceError` occurred, attempting to reconnect and "
-                        + "retry."
+                        "`pysmu.DeviceError` occurred during `measure()`, attempting "
+                        + "to reconnect and retry."
                     )
                     self._reconnect()
                     continue
@@ -1234,8 +1241,8 @@ class smu:
                     err = e
                 else:
                     warnings.warn(
-                        "`pysmu.DeviceError` occurred, attempting to reconnect and "
-                        + "retry."
+                        "`pysmu.DeviceError` occurred during `enable_output()`, "
+                        + "attempting to reconnect and retry."
                     )
                     self._reconnect()
                     continue
