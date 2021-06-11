@@ -375,9 +375,6 @@ class smu:
     def _reconnect(self):
         """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
         input("Attempting reconnect. Press Enter to continue...")
-
-        before = self.channel_settings
-
         # remove all devices from the session
         for dev in self._session.devices:
             try:
@@ -401,8 +398,6 @@ class smu:
 
         # update board mapping
         self._map_boards()
-
-        print(before == self.channel_settings)
 
     def disconnect(self):
         """Disconnect all devices from the session.
@@ -934,6 +929,8 @@ class smu:
                     + "measurement points, NPLC, or settling delay if this is a "
                     + "problem."
                 )
+
+        print(self.channel_settings)
 
         # convert requested samples to chunks of samples that fit in the buffers
         data_per_chunk = int(
