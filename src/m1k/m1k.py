@@ -376,6 +376,8 @@ class smu:
         """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
         input("Attempting reconnect. Press Enter to continue...")
 
+        before = self.channel_settings
+
         # remove all devices from the session
         for dev in self._session.devices:
             try:
@@ -400,7 +402,7 @@ class smu:
         # update board mapping
         self._map_boards()
 
-        print(self.channel_settings)
+        print(before == self.channel_settings)
 
     def disconnect(self):
         """Disconnect all devices from the session.
