@@ -291,6 +291,10 @@ class smu:
         self._settling_delay_samples = 0
         self._samples_per_datum = 0
 
+        # init with default settings
+        for ch in range(self.num_channels):
+            self._configure_channel_default_settings(ch)
+
         # get board mapping
         self._map_boards()
 
@@ -355,9 +359,6 @@ class smu:
                 if dev.serial == serial:
                     dev_ix = ix
                     break
-
-            # init new device with default settings
-            self._configure_channel_default_settings(ch)
 
             # store mapping between channel and device index in session
             self._channel_settings[ch]["dev_ix"] = dev_ix
@@ -929,8 +930,6 @@ class smu:
                     + "measurement points, NPLC, or settling delay if this is a "
                     + "problem."
                 )
-
-        print(self.channel_settings)
 
         # convert requested samples to chunks of samples that fit in the buffers
         data_per_chunk = int(
