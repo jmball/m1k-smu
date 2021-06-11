@@ -400,6 +400,8 @@ class smu:
         # update board mapping
         self._map_boards()
 
+        print(self.channel_settings)
+
     def disconnect(self):
         """Disconnect all devices from the session.
 
