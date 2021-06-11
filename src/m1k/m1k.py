@@ -381,6 +381,9 @@ class smu:
             except pysmu.SessionError:
                 self._session.remove(dev, True)
 
+        # scan for available devices, one or more has probably changed adress
+        self._session.scan()
+
         # add devices to session again
         for serial in self._serials:
             self._connect_board(serial)
