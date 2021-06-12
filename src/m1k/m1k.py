@@ -32,7 +32,7 @@ class smu:
     However, different DC output values can be configured/measured for each channel.
     """
 
-    def __init__(self, plf=50, ch_per_board=2):
+    def __init__(self, plf=50, ch_per_board=2, read_timeout=20000, libsmu_mod=False):
         """Initialise object.
 
         Parameters
@@ -43,6 +43,15 @@ class smu:
             Number of channels to use per ADALM1000 board. If 1, channel A is assumed
             as the channel to use. This cannot be changed once the object has been
             instantiated.
+        read_timeout : int
+            Timeout in ms for reading data.
+        libsmu_mod : bool
+            Set to `True` if the modified version (https://github.com/jmball/libsmu)
+            of libsmu is being used as the backend. This modified version doesn't
+            change the output mode of a channel after a call to `pysmu.Session.run()`,
+            i.e. a measurement. Set to `False` if the original unmodified is being used
+            as the backend. This unmodified version always resets a channel to `HI_Z`
+            mode after a measurement.
         """
         self._plf = plf
 
@@ -52,6 +61,9 @@ class smu:
             raise ValueError(
                 f"Invalid number of channels per board: {ch_per_board}. Must be 1 or 2."
             )
+
+        self.read_timeout = read_timeout
+        self.libsmu_mod = libsmu_mod
 
         # private attribute to hold pysmu session
         self._session = None
@@ -298,7 +310,7 @@ class smu:
         # get board mapping
         self._map_boards()
 
-        # set outputs
+        # turn off outputs
         for ch in range(self.num_channels):
             dev_ix = self._channel_settings[ch]["dev_ix"]
             # disable output (should already be disabled but just to make sure)
@@ -609,14 +621,14 @@ class smu:
             "v_range": 5,
             "source_mode": "v",
             "sweep_mode": "v",
+            "sourcing_0A": False,
             "dc_values": [],
             "sweep_values": [],
-            "dual_sweep": False,
             "calibration_mode": "internal",
             "external_calibration": {},
         }
 
-    def configure_sweep(self, start, stop, points, dual=False, source_mode="v"):
+    def configure_sweep(self, start, stop, points, source_mode="v"):
         """Configure an output sweep for all channels.
 
         Parameters
@@ -627,8 +639,6 @@ class smu:
             Stop value in V or A.
         points : int
             Number of points in the sweep.
-        dual : bool
-            If `True`, append the reverse sweep as well.
         source_mode : str
             Desired source mode: "v" for voltage, "i" for current.
         """
@@ -658,22 +668,16 @@ class smu:
                 values = f_int(values).tolist()
 
             self._channel_settings[ch]["sweep_values"] = values
-            self._channel_settings[ch]["dual_sweep"] = dual
 
-    def configure_list_sweep(self, values=[], dual=False, source_mode="v"):
-        """Configure list sweeps for all channels.
-
-        All lists must be the same length.
+    def configure_list_sweep(self, values={}, source_mode="v"):
+        """Configure list sweeps.
 
         Parameters
         ----------
-        values : list of lists
-            Lists of values for source sweeps, one sub-list for each channel. The
-            outer list index is the channel index, e.g. passing
-            `[[0, 1, 2], [0, 1, 2]]` will sweep both channels 0 and 1 with values of
-            `[0, 1, 2]`. All sub-lists must be the same length.
-        dual : bool
-            If `True`, append the reverse sweep as well.
+        values : dict of lists or list
+            Dictionary of lists of source values for sweeps, of the form
+            {channel: [source values]}. If a list is given, this list of values will
+            be set for all channels.
         source_mode : str
             Desired source mode during measurement: "v" for voltage, "i" for current.
         """
@@ -683,21 +687,14 @@ class smu:
                 + "(current)."
             )
 
-        if len(values) != self.num_channels:
-            raise ValueError(
-                f"Invalid values list length: {len(values)}. The length of the values "
-                + f"list must match the number of channels: {self.num_channels}."
-            )
+        # convert list input to dictionary
+        if type(values) is list:
+            values_dict = {}
+            for ch in range(self.num_channels):
+                values_dict[ch] = values
+            values = values_dict
 
-        # make sure all sub-lists have equal legnth
-        unique_sublist_lengths = set([len(sublist) for sublist in values])
-        if len(unique_sublist_lengths) != 1:
-            raise ValueError(
-                "All sub-lists in `values` must be the same length. `values` contains "
-                + f"sub-lists with lengths: {unique_sublist_lengths}."
-            )
-
-        for ch in range(self.num_channels):
+        for ch, ch_values in values.items():
             self._channel_settings[ch]["sweep_mode"] = source_mode
 
             offset = 0
@@ -706,7 +703,7 @@ class smu:
                     # channel LO connected to 2.5 V
                     offset = 2.5
 
-            sweep = [x + offset for x in values[ch]]
+            sweep = [x + offset for x in ch_values[ch]]
 
             # update set values according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
@@ -716,96 +713,60 @@ class smu:
                 sweep = f_int(sweep).tolist()
 
             self._channel_settings[ch]["sweep_values"] = sweep
-            self._channel_settings[ch]["dual_sweep"] = dual
 
-    def configure_dc(self, values=[], source_mode="v"):
-        """Configure a DC output measurement for all channels.
+    def configure_dc(self, values={}, source_mode="v"):
+        """Configure DC outputs.
 
         Parameters
         ----------
-        values : list of float or int; float or int
-            Desired output values in V or A depending on source mode. The list indeices
-            match the channel numbers. If a numeric value is given it is applied to all
-            channels.
+        values : dict of float or int; float or int
+            Dictionary of output values, of the form {channel: dc_value}. If a value
+            of numeric type is given it is applied to all channels.
         source_mode : str
             Desired source mode during measurement: "v" for voltage, "i" for current.
         """
-        # validate/format values input
-        num_channels = self.num_channels
-        t = type(values)
-        if t == list:
-            if len(values) != num_channels:
-                raise ValueError(
-                    "All channel values must be set simulateneously. The are "
-                    + f"{self.num_channels} channels connected but {len(values)} "
-                    + "values were given."
-                )
-        elif (t == float) or (t == int):
-            values = [values] * num_channels
-        else:
-            raise ValueError(
-                f"Invalid type for values: {t}. Must be `list`, `float`, or `int`."
-            )
-
         if source_mode not in ["v", "i"]:
             raise ValueError(
                 f"Invalid source mode: {source_mode}. Must be 'v' (voltage) or 'i' "
                 + "(current)."
             )
 
+        # validate/format values input
+        if type(values) in [float, int]:
+            values_dict = {}
+            for ch in range(self.num_channels):
+                values_dict[ch] = values
+            values = values_dict
+
         # setup channel settings for a dc measurement
-        for ch, value in enumerate(values):
+        for ch, ch_value in values.items():
             self._channel_settings[ch]["source_mode"] = source_mode
 
             if source_mode == "v":
                 if self._channel_settings[ch]["v_range"] == 2.5:
                     # channel LO connected to 2.5 V
-                    value += 2.5
+                    ch_value += 2.5
 
             # update set value according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
                 dev_channel = self._channel_settings[ch]["dev_channel"]
                 cal = self._channel_settings[ch]["external_calibration"][dev_channel]
                 f_int = cal[f"source_{source_mode}"]["set"]
-                value = float(f_int(value))
+                ch_value = float(f_int(ch_value))
 
-            self._channel_settings[ch]["dc_values"] = [value]
+            self._channel_settings[ch]["dc_values"] = [ch_value]
 
-        # write values for all channels
-        start_modes = []
-        for ch in range(self.num_channels):
+        # if outputs are currently enabled, update their values
+        for ch, ch_value in values.items():
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
-            # get current mode to determine whether output needs to be re-enabled
-            start_modes.append(self._session.devices[dev_ix].channels[dev_channel].mode)
 
-            values = self._channel_settings[ch]["dc_values"]
-
-            # write new value to the channel
-            # self._session.devices[dev_ix].flush(channel=0, read=True)
-            self._session.devices[dev_ix].channels[dev_channel].write(values)
-
-        # enable outputs prior to run-read as required to update the device value
-        # doing this after the write loop minimises the time the outputs are enabled
-        # before the run, which triggers the change in outputs
-        self.enable_output(True)
-
-        # run and read one sample for all channels to update output values
-        self._session.run(1)
-        self._session.read(1)
-
-        # getting a sample automatically turns off the outputs so turn them back
-        # on again in the correct mode if they were already on
-        for ch, start_mode in enumerate(start_modes):
-            if start_mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+            mode = self._session.devices[dev_ix].channels[dev_channel].mode
+            if mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                # setting enable_output to True updates its value
                 self.enable_output(True, ch)
-            else:
-                # although output turns off after measurement run, it doesn't
-                # re-set the channel mode in the library to HI_Z so force it manually
-                # here
-                self.enable_output(False, ch)
 
-    def measure(self, measurement="dc", allow_chunking=False):
+    def measure(self, channels=None, measurement="dc", allow_chunking=False):
         """Perform the configured sweep or dc measurements for all channels.
 
         This function will attempt retries if `pysmu.SessionError` and/or
@@ -813,6 +774,10 @@ class smu:
 
         Parameters
         ----------
+        channels : list of int or int
+            List of channel numbers (0-indexed) to measure. If only one channel is
+            measured its number can be provided as an int. If `None`, measure all
+            channels.
         measurement : {"dc", "sweep"}
             Measurement to perform based on stored settings from configure_sweep
             ("sweep") or configure_dc ("dc", default) method calls.
@@ -826,18 +791,23 @@ class smu:
         Returns
         -------
         data : dict
-            Data dictionary of the form:
-            {channel: {"raw": raw_data, "processed": processed_data}}.
+            Data dictionary of the form: {channel: data}.
         """
         if measurement not in ["dc", "sweep"]:
             raise ValueError(
                 f"Invalid measurement mode: {measurement}. Must be 'dc' or 'sweep'."
             )
 
+        if type(channels) is int:
+            channels = [channels]
+
+        if channels is None:
+            channels = [i for i in range(self.num_channels)]
+
         err = None
         for attempt in range(1, self._retries + 1):
             try:
-                raw_data, t0 = self._measure(measurement, allow_chunking)
+                raw_data, t0 = self._measure(channels, measurement, allow_chunking)
                 break
             except pysmu.SessionError as e:
                 if attempt == self._retries:
@@ -870,11 +840,14 @@ class smu:
         # return processed_data
         return processed_data
 
-    def _measure(self, measurement, allow_chunking):
+    def _measure(self, channels, measurement, allow_chunking):
         """Perform a DC or sweep measurement.
 
         Parameters
         ----------
+        channels : list of int or int
+            List of channel numbers to measure. If only one channel is measured its
+            number can be provided as an int.
         measurement : {"dc", "sweep"}
             Measurement to perform based on stored settings from configure_sweep
             ("sweep") or configure_dc ("dc", default) method calls.
@@ -892,28 +865,28 @@ class smu:
         t0 : float
             Reading start time in s.
         """
-        # get interable of channels now to save repeated lookups later
-        channels = range(self.num_channels)
-
-        # get current mode to determine whether output needs to be re-enabled
-        start_modes = []
-        for ch in channels:
-            dev_ix = self._channel_settings[ch]["dev_ix"]
-            dev_channel = self._channel_settings[ch]["dev_channel"]
-            start_modes.append(self._session.devices[dev_ix].channels[dev_channel].mode)
+        if self.libsmu_mod is False:
+            # get current mode to determine whether output needs to be re-enabled
+            start_modes = {}
+            for ch in channels:
+                dev_ix = self._channel_settings[ch]["dev_ix"]
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                start_modes[ch] = (
+                    self._session.devices[dev_ix].channels[dev_channel].mode
+                )
 
         # build samples list accounting for nplc and settling delay
+        # set number of samples requested as maximum of all requested channels
         ch_samples = {}
+        num_samples_requested = 0
         for ch in channels:
             values = self._channel_settings[ch][f"{measurement}_values"]
             samples = []
             for value in values:
                 samples += [value] * self._samples_per_datum
             ch_samples[ch] = samples
-
-        # look up requested number of samples. All channels must be the same so just
-        # read from the first channel
-        num_samples_requested = len(ch_samples[0])
+            if len(samples) > num_samples_requested:
+                num_samples_requested = len(samples)
 
         # decide whether the request is allowed
         if num_samples_requested > self._maximum_buffer_size:
@@ -941,82 +914,61 @@ class smu:
             samples_per_chunk = data_per_chunk * self._samples_per_datum
         num_chunks = int(math.ceil(num_samples_requested / samples_per_chunk))
 
-        # turn on output leds to indicate output on
-        for ch in channels:
-            self.set_leds(channel=ch, G=True, B=True)
-
-        # update source mode if sweep measurement
+        # if dc output setting is currently special case of sourcing zero current,
+        # i.e. currently in HI_Z mode, but a sweep is requested, update output mode
+        # to source current, measure voltage
         if measurement == "sweep":
             for ch in channels:
-                sweep_mode = self._channel_settings[ch]["sweep_mode"]
-                self._channel_settings[ch]["source_mode"] = sweep_mode
-
-        # determine how many scans to perform, i.e. is this a dual sweep?
-        num_scans = 1
-        if measurement == "sweep":
-            # all channels have the same dual sweep setting so just look up the 1st
-            if self._channel_settings[0]["dual_sweep"] is True:
-                num_scans = 2
+                dev_ix = self._channel_settings[ch]["dev_ix"]
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                if self._channel_settings[ch]["sourcing_0A"] is True:
+                    if self._channel_settings[ch]["four_wire"] is True:
+                        mode = pysmu.Mode.SIMV_SPLIT
+                    else:
+                        mode = pysmu.Mode.SIMV
+                    self._session.devices[dev_ix].channels[dev_channel].mode = mode
+                    self._channel_settings[ch]["sourcing_0A"] = False
+                    start_modes[ch] = mode
 
         # init data container
         # TODO: make more accurate sample timer
         t0 = time.time()
         raw_data = []
-        for scan in range(num_scans):
-            # iterate over chunks of data that fit into the buffer
-            for i in range(num_chunks):
-                # write chunks to devices
-                self._session.flush()
-                for ch in channels:
-                    dev_ix = self._channel_settings[ch]["dev_ix"]
-                    dev_channel = self._channel_settings[ch]["dev_channel"]
-                    samples = ch_samples[ch]
-                    if scan == 1:
-                        # this is the second scan of a dual sweep so reverse sample list
-                        samples.reverse()
-                    chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
+        # iterate over chunks of data that fit into the buffer
+        for i in range(num_chunks):
+            # write chunks to devices
+            self._session.flush()
+            for ch in channels:
+                dev_ix = self._channel_settings[ch]["dev_ix"]
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                samples = ch_samples[ch]
+                chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
+                if chunk != []:
                     self._session.devices[dev_ix].channels[dev_channel].write(chunk)
 
-                # enable outputs
-                for ch in channels:
-                    dev_ix = self._channel_settings[ch]["dev_ix"]
-                    dev_channel = self._channel_settings[ch]["dev_channel"]
-                    # determine if request is for special case of open-circuit voltage
-                    # measurement requiring HI_Z mode rather than SIMV
-                    if (
-                        (measurement == "dc")
-                        and (self._channel_settings[ch]["source_mode"] == "i")
-                        and (chunk[0] == 0)
-                    ):
-                        if self._channel_settings[ch]["four_wire"] is True:
-                            mode = pysmu.Mode.HI_Z_SPLIT
-                        else:
-                            mode = pysmu.Mode.HI_Z
+            # run scans
+            self._session.run(len(chunk))
 
-                        self._session.devices[dev_ix].channels[dev_channel].mode = mode
-                    else:
-                        # not a special case so just enable output as normal
-                        self.enable_output(True, ch)
+            # read the data chunk and add to raw data container
+            raw_data.append(self._session.read(len(chunk), self.read_timeout))
 
-                # run scans
-                self._session.run(len(chunk))
-
-                # read the data chunk and add to raw data container
-                raw_data.append(self._session.read(len(chunk), 20000))
-
-        # re-enable outputs if required
-        for ch, start_mode in enumerate(start_modes):
-            if self._channel_settings[ch]["auto_off"] is False:
-                if start_mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
-                    self.enable_output(True, ch)
-                else:
-                    # although output turns off after measurement run, it doesn't
-                    # re-set the channel mode in the library to HI_Z so force it manually
-                    # here
+        # disable/enable outputs as required
+        for ch in channels:
+            if self.libsmu_mod is True:
+                if self._channel_settings[ch]["auto_off"] is True:
                     self.enable_output(False, ch)
             else:
-                # turn off output leds and re-set mode
-                self.enable_output(False, ch)
+                if self._channel_settings[ch]["auto_off"] is False:
+                    if start_modes[ch] not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                        self.enable_output(True, ch)
+                    else:
+                        # although output turns off after measurement run, it doesn't
+                        # re-set the channel mode in the library to HI_Z so force it
+                        # manually here
+                        self.enable_output(False, ch)
+                else:
+                    # explicity turn off output leds and re-set mode
+                    self.enable_output(False, ch)
 
         return raw_data, t0
 
@@ -1219,7 +1171,7 @@ class smu:
 
         return processed_data
 
-    def enable_output(self, enable, channel=None):
+    def enable_output(self, enable, channels=None):
         """Enable/disable channel outputs.
 
         This function will attempt retries if `pysmu.DeviceError`'s occur.
@@ -1228,13 +1180,20 @@ class smu:
         ---------
         enable : bool
             Turn on (`True`) or turn off (`False`) channel outputs.
-        channel : int or None
-            Channel number (0-indexed). If `None`, apply to all channels.
+        channels : list of int, int, or None
+            List of channel numbers (0-indexed). If only one channel is required its
+            number can be provided as an int. If `None`, apply to all channels.
         """
+        if type(channels) is int:
+            channels = [channels]
+
+        if channels is None:
+            channels = [ch for ch in range(self.num_channels)]
+
         err = None
         for attempt in range(1, self._retries + 1):
             try:
-                self._enable_output(enable, channel)
+                self._enable_output(enable, channels)
                 break
             except pysmu.DeviceError as e:
                 if attempt == self._retries:
@@ -1250,7 +1209,7 @@ class smu:
         if err is not None:
             raise err
 
-    def _enable_output(self, enable, channel=None):
+    def _enable_output(self, enable, channels):
         """Enable/disable channel outputs.
 
         This function will attempt retries if `pysmu.DeviceError`'s occur.
@@ -1259,30 +1218,54 @@ class smu:
         ---------
         enable : bool
             Turn on (`True`) or turn off (`False`) channel outputs.
-        channel : int or None
-            Channel number (0-indexed). If `None`, apply to all channels.
+        channels : list of int, int, or None
+            List of channel numbers (0-indexed). If only one channel is required its
+            number can be provided as an int. If `None`, apply to all channels.
         """
-        if channel is None:
-            channels = range(self.num_channels)
-        else:
-            channels = [channel]
-
         for ch in channels:
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
             if enable is True:
+                # write dc value to output
+                dc_values = self._channel_settings[ch]["dc_values"]
+                self._session.devices[dev_ix].channels[dev_channel].write(dc_values)
+
+                # determine source mode
                 if self._channel_settings[ch]["four_wire"] is True:
                     if self._channel_settings[ch]["source_mode"] == "v":
                         mode = pysmu.Mode.SVMI_SPLIT
+                    elif dc_values == [0]:
+                        # special case of sourcing zero current happens in HI_Z mode
+                        mode = pysmu.Mode.HI_Z_SPLIT
+                        self._channel_settings[ch]["sourcing_0A"] = True
                     else:
                         mode = pysmu.Mode.SIMV_SPLIT
                 else:
                     if self._channel_settings[ch]["source_mode"] == "v":
                         mode = pysmu.Mode.SVMI
+                    elif dc_values == [0]:
+                        # special case of sourcing zero current happens in HI_Z mode
+                        mode = pysmu.Mode.HI_Z
+                        self._channel_settings[ch]["sourcing_0A"] = True
                     else:
                         mode = pysmu.Mode.SIMV
+
+                # set leds
                 self.set_leds(channel=ch, G=True, B=True)
+
+                # set output mode
+                self._session.devices[dev_ix].channels[dev_channel].mode = mode
+
+                # run and read one sample to update output value
+                self._session.run(1)
+                self._session.read(1, self.read_timeout)
+
+                # if libsmu mod is not available the output turns off after the run
+                if self.libsmu_mod is False:
+                    self._session.devices[dev_ix].channels[dev_channel].mode = mode
             else:
+                self._channel_settings[ch]["sourcing_0A"] = False
+
                 if self._channel_settings[ch]["four_wire"] is True:
                     mode = pysmu.Mode.HI_Z_SPLIT
                 else:
@@ -1309,7 +1292,8 @@ class smu:
                         # the other channel is off so ok to turn off blue LED
                         self.set_leds(channel=ch, G=True)
 
-            self._session.devices[dev_ix].channels[dev_channel].mode = mode
+                # set output mode
+                self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
     def get_channel_id(self, channel):
         """Get the serial number of requested channel.
