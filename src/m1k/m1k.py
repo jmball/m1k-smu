@@ -32,7 +32,14 @@ class smu:
     However, different DC output values can be configured/measured for each channel.
     """
 
-    def __init__(self, plf=50, ch_per_board=2, read_timeout=20000, libsmu_mod=False):
+    def __init__(
+        self,
+        plf=50,
+        ch_per_board=2,
+        i_threshold=0.2,
+        read_timeout=20000,
+        libsmu_mod=False,
+    ):
         """Initialise object.
 
         Parameters
@@ -43,6 +50,9 @@ class smu:
             Number of channels to use per ADALM1000 board. If 1, channel A is assumed
             as the channel to use. This cannot be changed once the object has been
             instantiated.
+        i_threshold : float
+            Set status code in measured data if absolute value of current in A is above
+            this threshold.
         read_timeout : int
             Timeout in ms for reading data.
         libsmu_mod : bool
@@ -63,6 +73,7 @@ class smu:
             )
 
         self.read_timeout = read_timeout
+        self.i_threshold = abs(i_threshold)
         self.libsmu_mod = libsmu_mod
 
         # private attribute to hold pysmu session
@@ -807,7 +818,9 @@ class smu:
         err = None
         for attempt in range(1, self._retries + 1):
             try:
-                raw_data, t0 = self._measure(channels, measurement, allow_chunking)
+                raw_data, overcurrents, t0 = self._measure(
+                    channels, measurement, allow_chunking
+                )
                 break
             except pysmu.SessionError as e:
                 if attempt == self._retries:
@@ -835,7 +848,7 @@ class smu:
 
         # re-format raw data to: (voltage, current, timestamp, status)
         # and process to account for nplc and settling delay if required
-        processed_data = self._process_data(raw_data, t0)
+        processed_data = self._process_data(raw_data, channels, overcurrents, t0)
 
         # return processed_data
         return processed_data
@@ -845,9 +858,8 @@ class smu:
 
         Parameters
         ----------
-        channels : list of int or int
-            List of channel numbers to measure. If only one channel is measured its
-            number can be provided as an int.
+        channels : list
+            List of channel numbers to measure.
         measurement : {"dc", "sweep"}
             Measurement to perform based on stored settings from configure_sweep
             ("sweep") or configure_dc ("dc", default) method calls.
@@ -860,8 +872,10 @@ class smu:
 
         Returns
         -------
-        raw_data : dict
-            Raw data dictionary.
+        raw_data : list of lists
+            List of chunks for raw data.
+        overcurrents : list of dict
+            List of channel overcurrent statuses for each chunk.
         t0 : float
             Reading start time in s.
         """
@@ -934,6 +948,7 @@ class smu:
         # TODO: make more accurate sample timer
         t0 = time.time()
         raw_data = []
+        overcurrents = []
         # iterate over chunks of data that fit into the buffer
         for i in range(num_chunks):
             # write chunks to devices
@@ -951,6 +966,11 @@ class smu:
 
             # read the data chunk and add to raw data container
             raw_data.append(self._session.read(len(chunk), self.read_timeout))
+
+            chunk_overcurrents = {}
+            for ch in channels:
+                chunk_overcurrents[ch] = self._session.devices[dev_ix].overcurrent
+            overcurrents.append(chunk_overcurrents)
 
         # disable/enable outputs as required
         for ch in channels:
@@ -970,15 +990,19 @@ class smu:
                     # explicity turn off output leds and re-set mode
                     self.enable_output(False, ch)
 
-        return raw_data, t0
+        return raw_data, t0, overcurrents
 
-    def _process_data(self, raw_data, t0):
+    def _process_data(self, raw_data, channels, overcurrents, t0):
         """Process raw data accounting for NPLC and settling delay.
 
         Parameters
         ----------
         raw_data : dict
             Raw data dictionary.
+        channels : list of int or int
+            List of channel numbers (0-indexed) to extract from raw data.
+        overcurrents : list of dict
+            List of channel overcurrent statuses for each chunk.
         t0 : float
             Timestamp representing start time (s).
 
@@ -990,15 +1014,23 @@ class smu:
         """
         t_delta = 1 / self.sample_rate
 
+        # determine if overcurrent occured in any chunk for each channel
+        channel_overcurrents = {}
+        for ch, _ in overcurrents[0].items():
+            channel_overcurrents[ch] = []
+            for chunk_overcurrents in overcurrents:
+                channel_overcurrents[ch].append(chunk_overcurrents[ch])
+            channel_overcurrents[ch] = any(channel_overcurrents[ch])
+
         # init processed data container
         processed_data = {}
-        for ch in range(self.num_channels):
+        for ch in channels:
             processed_data[ch] = []
 
         cumulative_chunk_lengths = 0
         for chunk in raw_data:
             if self.ch_per_board == 1:
-                for ch in range(self.num_channels):
+                for ch in channels:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[ch]), self._samples_per_datum)
 
@@ -1067,10 +1099,21 @@ class smu:
                         else:
                             voltages = A_voltages
 
+                    # set status: 0=ok, 1=i>i_theshold, 2=overcurrent (overload on
+                    # board input power)
+                    if channel_overcurrents[ch] is True:
+                        statuses = [2 for i in currents]
+                    else:
+                        statuses = [
+                            0 if abs(i) <= self.i_threshold else 1 for i in currents
+                        ]
+
                     processed_data[ch].extend(
                         [
-                            (v, i, t, 0)
-                            for v, i, t in zip(voltages, currents, timestamps)
+                            (v, i, t, s)
+                            for v, i, t, s in zip(
+                                voltages, currents, timestamps, statuses
+                            )
                         ]
                     )
             elif self.ch_per_board == 2:
@@ -1154,16 +1197,35 @@ class smu:
                         B_voltages = f_int_mvb(B_voltages).tolist()
                         B_currents = f_int_mib(B_currents).tolist()
 
+                    # set status: 0=ok, 1=i>i_theshold, 2=overcurrent (overload on
+                    # board input power)
+                    if channel_overcurrents[2 * board] is True:
+                        A_statuses = [2 for i in currents]
+                    else:
+                        A_statuses = [
+                            0 if abs(i) <= self.i_threshold else 1 for i in currents
+                        ]
+                    if channel_overcurrents[2 * board + 1] is True:
+                        B_statuses = [2 for i in currents]
+                    else:
+                        B_statuses = [
+                            0 if abs(i) <= self.i_threshold else 1 for i in currents
+                        ]
+
                     processed_data[2 * board].extend(
                         [
-                            (v, i, t, 0)
-                            for v, i, t in zip(A_voltages, A_currents, timestamps)
+                            (v, i, t, s)
+                            for v, i, t, s in zip(
+                                A_voltages, A_currents, timestamps, A_statuses
+                            )
                         ]
                     )
                     processed_data[2 * board + 1].extend(
                         [
-                            (v, i, t, 0)
-                            for v, i, t in zip(B_voltages, B_currents, timestamps)
+                            (v, i, t, s)
+                            for v, i, t, s in zip(
+                                B_voltages, B_currents, timestamps, B_statuses
+                            )
                         ]
                     )
 
