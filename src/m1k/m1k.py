@@ -231,6 +231,21 @@ class smu:
         # update total samples for each data point
         self._samples_per_datum = self._nplc_samples + self._settling_delay_samples
 
+    @property
+    def enabled_outputs(self):
+        """Get dictionary of enabled state of channels."""
+        enabled_outputs = {}
+        for ch in range(self.num_channels):
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+            mode = self._session.devices[dev_ix].channels[dev_channel].mode
+            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLT]:
+                enabled_outputs[ch] = False
+            else:
+                enabled_outputs[ch] = True
+
+        return enabled_outputs
+
     def connect(self, serials=None):
         """Connect one or more devices (channels) to the session (SMU).
 
