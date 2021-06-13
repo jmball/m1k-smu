@@ -216,46 +216,60 @@ def worker():
         q.task_done()
 
 
-# load channel serial mapping for SMU from file path stored in environment variable
+# load config file
 try:
-    serial_map_path = pathlib.Path(os.environ["SMU_SERIAL_MAP"])
-    with open(serial_map_path, "r") as f:
-        serial_map_dict = yaml.load(f, Loader=yaml.SafeLoader)
-    serials = [v for k, v in sorted(serial_map_dict.items())]
+    config_path = pathlib.Path(os.environ["SMU_CONFIG_PATH"])
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.SafeLoader)
 except KeyError:
-    serials = None
+    config = None
     warnings.warn(
-        "Environment variable 'SMU_SERIAL_MAP' not set. Using default pysmu serial "
-        + "mapping."
+        "Environment variable 'SMU_CONFIG_PATH' not set. Using default configuration."
     )
 except FileNotFoundError:
-    serials = None
+    config = None
     warnings.warn(
-        f"Could not find serial mapping file: {serial_map_path}. Using default pysmu "
-        + "serial mapping."
+        f"Could not find config file: {config_path}. Using default configuration."
     )
 
+# read settings from config file
+if config is not None:
+    try:
+        serials = [v for k, v in sorted(config["board_mapping"].items())]
+    except KeyError:
+        serials = None
+        warnings.warn(f"Board mapping not found. Using pysmu default mapping.")
+
+    try:
+        ch_per_board = config["ch_per_board"]
+    except KeyError:
+        ch_per_board = None
+
+    try:
+        cal_data_folder = pathlib.Path(config["cal_data_folder"])
+    except KeyError:
+        cal_data_folder = None
+else:
+    serials = None
+    ch_per_board = None
+    cal_data_folder = None
+
 # init smu object
-try:
-    ch_per_board_path = pathlib.Path(os.environ["CH_PER_BOARD"])
-    with open(ch_per_board_path, "r") as f:
-        ch_per_board_dict = yaml.load(f, Loader=yaml.SafeLoader)
-    smu = m1k.m1k(ch_per_board=ch_per_board_dict["ch_per_board"])
-except KeyError:
-    smu = m1k.m1k()
+if ch_per_board is not None:
+    smu = m1k.smu(ch_per_board=ch_per_board)
+else:
+    smu = m1k.smu()
     ch_per_board = smu.ch_per_board
     warnings.warn(
-        f"Environment variable 'CH_PER_BOARD' not set. Using {smu.ch_per_board} "
-        + "channels per board."
+        f"Channels per board setting not found. Using {smu.ch_per_board} channels per "
+        + "board."
     )
 
 # connect boards
 smu.connect(serials)
 
 # load calibration data
-try:
-    cal_data_folder = pathlib.Path(os.environ["CAL_DATA_FOLDER"])
-
+if cal_data_folder is not None:
     cal_data = {}
     for board, serial in enumerate(smu.serials):
         # get list of cal files for given serial
@@ -275,18 +289,8 @@ try:
         elif ch_per_board == 2:
             cal_data[2 * board] = data
             cal_data[2 * board + 1] = data
-except KeyError:
+else:
     cal_data = {}
-    warnings.warn(
-        "Environment variable 'CAL_DATA_FOLDER' not set so external calibration data "
-        + "cannot be loaded."
-    )
-except IndexError:
-    cal_data = {}
-    warnings.warn(
-        f"Could not find calibration file for serial: {serial}. External calibration "
-        + "data not loaded."
-    )
 
 # initialise a queue to hold incoming connections
 q = queue.Queue()

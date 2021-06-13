@@ -1,0 +1,7 @@
+ch_per_board : 2
+
+board_mapping:
+  0: '2031205052543339313930323530313'
+  1: '2031205052543339313930323530323'
+
+cal_data_folder: './calibration/data'
