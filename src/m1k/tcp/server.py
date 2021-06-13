@@ -26,6 +26,91 @@ TERMCHAR = "\n"
 TERMCHAR_BYTES = TERMCHAR.encode()
 
 
+# load config file
+try:
+    config_path = pathlib.Path(os.environ["SMU_CONFIG_PATH"])
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.SafeLoader)
+except KeyError:
+    config = None
+    warnings.warn(
+        "Environment variable 'SMU_CONFIG_PATH' not set. Using default configuration."
+    )
+except FileNotFoundError:
+    config = None
+    warnings.warn(
+        f"Could not find config file: {config_path}. Using default configuration."
+    )
+
+# read settings from config file
+init_args = {}
+if config is not None:
+    try:
+        serials = [v for k, v in sorted(config["board_mapping"].items())]
+    except KeyError:
+        serials = None
+        warnings.warn("Board mapping not found. Using pysmu default mapping.")
+
+    try:
+        cal_data_folder = pathlib.Path(config["cal_data_folder"])
+    except KeyError:
+        cal_data_folder = None
+
+    try:
+        idn = config["idn"]
+    except KeyError:
+        idn = "SMU"
+
+    try:
+        init_args["ch_per_board"] = config["ch_per_board"]
+    except KeyError:
+        warnings.warn(
+            "Channels per board setting not found. Using default channels per board."
+        )
+
+    try:
+        init_args["i_threshold"] = config["i_threshold"]
+    except KeyError:
+        warnings.warn(
+            "Channels per board setting not found. Using default channels per board."
+        )
+
+    try:
+        init_args["libsmu_mod"] = config["libsmu_mod"]
+    except KeyError:
+        warnings.warn(
+            "Channels per board setting not found. Using default channels per board."
+        )
+
+# init smu object and connect boards
+smu = m1k.smu(**init_args)
+smu.connect(serials)
+
+# load calibration data
+if cal_data_folder is not None:
+    cal_data = {}
+    for board, serial in enumerate(smu.serials):
+        # get list of cal files for given serial
+        fs = [f for f in cal_data_folder.glob(f"cal_*_{serial}.yaml")]
+
+        # pick latest one
+        fs.reverse()
+        cf = fs[0]
+
+        # load cal data
+        with open(cf, "r") as f:
+            data = yaml.load(f, Loader=yaml.SafeLoader)
+
+        # add data to cal dict
+        if smu.ch_per_board == 1:
+            cal_data[board] = data
+        elif smu.ch_per_board == 2:
+            cal_data[2 * board] = data
+            cal_data[2 * board + 1] = data
+else:
+    cal_data = {}
+
+
 def worker():
     """Handle messages."""
     while True:
@@ -81,7 +166,7 @@ def worker():
                     resp = "ERROR: invalid message."
             elif msg_split[0] == "idn":
                 if len(msg_split) == 1:
-                    resp = "SMU"
+                    resp = idn
                 elif len(msg_split) == 2:
                     resp = smu.get_channel_id(msg_split[1])
                 else:
@@ -215,85 +300,6 @@ def worker():
 
         q.task_done()
 
-
-# load config file
-try:
-    config_path = pathlib.Path(os.environ["SMU_CONFIG_PATH"])
-    with open(config_path, "r") as f:
-        config = yaml.load(f, Loader=yaml.SafeLoader)
-except KeyError:
-    config = None
-    warnings.warn(
-        "Environment variable 'SMU_CONFIG_PATH' not set. Using default configuration."
-    )
-except FileNotFoundError:
-    config = None
-    warnings.warn(
-        f"Could not find config file: {config_path}. Using default configuration."
-    )
-
-# read settings from config file
-init_args = {}
-if config is not None:
-    try:
-        serials = [v for k, v in sorted(config["board_mapping"].items())]
-    except KeyError:
-        serials = None
-        warnings.warn("Board mapping not found. Using pysmu default mapping.")
-
-    try:
-        cal_data_folder = pathlib.Path(config["cal_data_folder"])
-    except KeyError:
-        cal_data_folder = None
-
-    try:
-        init_args["ch_per_board"] = config["ch_per_board"]
-    except KeyError:
-        warnings.warn(
-            "Channels per board setting not found. Using default channels per board."
-        )
-
-    try:
-        init_args["i_threshold"] = config["i_threshold"]
-    except KeyError:
-        warnings.warn(
-            "Channels per board setting not found. Using default channels per board."
-        )
-
-    try:
-        init_args["libsmu_mod"] = config["libsmu_mod"]
-    except KeyError:
-        warnings.warn(
-            "Channels per board setting not found. Using default channels per board."
-        )
-
-# init smu object and connect boards
-smu = m1k.smu(**init_args)
-smu.connect(serials)
-
-# load calibration data
-if cal_data_folder is not None:
-    cal_data = {}
-    for board, serial in enumerate(smu.serials):
-        # get list of cal files for given serial
-        fs = [f for f in cal_data_folder.glob(f"cal_*_{serial}.yaml")]
-
-        # pick latest one
-        fs.reverse()
-        cf = fs[0]
-
-        # load cal data
-        with open(cf, "r") as f:
-            data = yaml.load(f, Loader=yaml.SafeLoader)
-
-        # add data to cal dict
-        if smu.ch_per_board == 1:
-            cal_data[board] = data
-        elif smu.ch_per_board == 2:
-            cal_data[2 * board] = data
-            cal_data[2 * board + 1] = data
-else:
-    cal_data = {}
 
 # initialise a queue to hold incoming connections
 q = queue.Queue()
