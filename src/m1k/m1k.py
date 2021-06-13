@@ -1010,7 +1010,7 @@ class smu:
                     # explicity turn off output leds and re-set mode
                     self.enable_output(False, ch)
 
-        return raw_data, t0, overcurrents
+        return raw_data, overcurrents, t0
 
     def _process_data(self, raw_data, channels, overcurrents, t0):
         """Process raw data accounting for NPLC and settling delay.
