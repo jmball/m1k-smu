@@ -239,7 +239,7 @@ class smu:
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
             mode = self._session.devices[dev_ix].channels[dev_channel].mode
-            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLT]:
+            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
                 enabled_outputs[ch] = False
             else:
                 enabled_outputs[ch] = True
