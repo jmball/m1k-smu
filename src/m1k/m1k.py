@@ -246,7 +246,7 @@ class smu:
 
         return enabled_outputs
 
-    def connect(self, serials=None):
+    def connect(self, serials=None, sample_rate=100000):
         """Connect one or more devices (channels) to the session (SMU).
 
         WARNING: this method cannot be called again if a session already exists. To
@@ -261,10 +261,12 @@ class smu:
             will be added per list index, given as `2 * list index` and
             `2 * list index + 1`. If `None`, connect all available devices, assigning
             channel indices in the order determined by pysmu.
+        sample_rate : int
+            ADC sample rate in Hz.
         """
         if self._session is None:
             # the session wasn't provided and no session already exists so create one
-            self._session = pysmu.Session(add_all=False)
+            self._session = pysmu.Session(add_all=False, sample_rate=sample_rate)
             self._session.scan()
         else:
             raise RuntimeError("Cannot connect more devices to the existing session.")
