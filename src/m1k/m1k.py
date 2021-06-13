@@ -266,7 +266,7 @@ class smu:
         """
         if self._session is None:
             # the session wasn't provided and no session already exists so create one
-            self._session = pysmu.Session(add_all=False, sample_rate=sample_rate)
+            self._session = pysmu.Session(add_all=False)
             self._session.scan()
         else:
             raise RuntimeError("Cannot connect more devices to the existing session.")
@@ -281,10 +281,13 @@ class smu:
                 + "`None`."
             )
 
+        # connect boards 1 by 1
         self._serials = serials
-
         for serial in serials:
             self._connect_board(serial)
+
+        # set the session sample rate
+        self._session.configure(sample_rate)
 
         # reset to default state
         self.reset()
