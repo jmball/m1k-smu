@@ -233,39 +233,42 @@ except FileNotFoundError:
     )
 
 # read settings from config file
+init_args = {}
 if config is not None:
     try:
         serials = [v for k, v in sorted(config["board_mapping"].items())]
     except KeyError:
         serials = None
-        warnings.warn(f"Board mapping not found. Using pysmu default mapping.")
-
-    try:
-        ch_per_board = config["ch_per_board"]
-    except KeyError:
-        ch_per_board = None
+        warnings.warn("Board mapping not found. Using pysmu default mapping.")
 
     try:
         cal_data_folder = pathlib.Path(config["cal_data_folder"])
     except KeyError:
         cal_data_folder = None
-else:
-    serials = None
-    ch_per_board = None
-    cal_data_folder = None
 
-# init smu object
-if ch_per_board is not None:
-    smu = m1k.smu(ch_per_board=ch_per_board)
-else:
-    smu = m1k.smu()
-    ch_per_board = smu.ch_per_board
-    warnings.warn(
-        f"Channels per board setting not found. Using {smu.ch_per_board} channels per "
-        + "board."
-    )
+    try:
+        init_args["ch_per_board"] = config["ch_per_board"]
+    except KeyError:
+        warnings.warn(
+            "Channels per board setting not found. Using default channels per board."
+        )
 
-# connect boards
+    try:
+        init_args["i_threshold"] = config["i_threshold"]
+    except KeyError:
+        warnings.warn(
+            "Channels per board setting not found. Using default channels per board."
+        )
+
+    try:
+        init_args["libsmu_mod"] = config["libsmu_mod"]
+    except KeyError:
+        warnings.warn(
+            "Channels per board setting not found. Using default channels per board."
+        )
+
+# init smu object and connect boards
+smu = m1k.smu(**init_args)
 smu.connect(serials)
 
 # load calibration data
@@ -284,9 +287,9 @@ if cal_data_folder is not None:
             data = yaml.load(f, Loader=yaml.SafeLoader)
 
         # add data to cal dict
-        if ch_per_board == 1:
+        if smu.ch_per_board == 1:
             cal_data[board] = data
-        elif ch_per_board == 2:
+        elif smu.ch_per_board == 2:
             cal_data[2 * board] = data
             cal_data[2 * board + 1] = data
 else:

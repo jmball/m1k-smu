@@ -5,3 +5,7 @@ board_mapping:
   1: '2031205052543339313930323530323'
 
 cal_data_folder: './calibration/data'
+
+i_threshold: 0.05
+
+libsmu_mod: True
