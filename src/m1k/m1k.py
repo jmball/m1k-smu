@@ -652,7 +652,6 @@ class smu:
             "v_range": 5,
             "source_mode": "v",
             "sweep_mode": "v",
-            "sourcing_0A": False,
             "dc_values": [],
             "sweep_values": [],
             "calibration_mode": "internal",
@@ -947,22 +946,6 @@ class smu:
         else:
             samples_per_chunk = data_per_chunk * self._samples_per_datum
         num_chunks = int(math.ceil(num_samples_requested / samples_per_chunk))
-
-        # if dc output setting is currently special case of sourcing zero current,
-        # i.e. currently in HI_Z mode, but a sweep is requested, update output mode
-        # to source current, measure voltage
-        if measurement == "sweep":
-            for ch in channels:
-                dev_ix = self._channel_settings[ch]["dev_ix"]
-                dev_channel = self._channel_settings[ch]["dev_channel"]
-                if self._channel_settings[ch]["sourcing_0A"] is True:
-                    if self._channel_settings[ch]["four_wire"] is True:
-                        mode = pysmu.Mode.SIMV_SPLIT
-                    else:
-                        mode = pysmu.Mode.SIMV
-                    self._session.devices[dev_ix].channels[dev_channel].mode = mode
-                    self._channel_settings[ch]["sourcing_0A"] = False
-                    start_modes[ch] = mode
 
         # init data container
         # TODO: make more accurate sample timer
@@ -1316,19 +1299,11 @@ class smu:
                 if self._channel_settings[ch]["four_wire"] is True:
                     if self._channel_settings[ch]["source_mode"] == "v":
                         mode = pysmu.Mode.SVMI_SPLIT
-                    elif dc_values == [0]:
-                        # special case of sourcing zero current happens in HI_Z mode
-                        mode = pysmu.Mode.HI_Z_SPLIT
-                        self._channel_settings[ch]["sourcing_0A"] = True
                     else:
                         mode = pysmu.Mode.SIMV_SPLIT
                 else:
                     if self._channel_settings[ch]["source_mode"] == "v":
                         mode = pysmu.Mode.SVMI
-                    elif dc_values == [0]:
-                        # special case of sourcing zero current happens in HI_Z mode
-                        mode = pysmu.Mode.HI_Z
-                        self._channel_settings[ch]["sourcing_0A"] = True
                     else:
                         mode = pysmu.Mode.SIMV
 
@@ -1346,8 +1321,6 @@ class smu:
                 if self.libsmu_mod is False:
                     self._session.devices[dev_ix].channels[dev_channel].mode = mode
             else:
-                self._channel_settings[ch]["sourcing_0A"] = False
-
                 if self._channel_settings[ch]["four_wire"] is True:
                     mode = pysmu.Mode.HI_Z_SPLIT
                 else:
