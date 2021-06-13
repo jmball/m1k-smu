@@ -1223,13 +1223,13 @@ class smu:
                         A_statuses = [2 for i in currents]
                     else:
                         A_statuses = [
-                            0 if abs(i) <= self.i_threshold else 1 for i in currents
+                            0 if abs(i) <= self.i_threshold else 1 for i in A_currents
                         ]
                     if channel_overcurrents[2 * board + 1] is True:
                         B_statuses = [2 for i in currents]
                     else:
                         B_statuses = [
-                            0 if abs(i) <= self.i_threshold else 1 for i in currents
+                            0 if abs(i) <= self.i_threshold else 1 for i in B_currents
                         ]
 
                     processed_data[2 * board].extend(
