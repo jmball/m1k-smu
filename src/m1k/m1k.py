@@ -1160,12 +1160,10 @@ class smu:
                     )
             elif self.ch_per_board == 2:
                 # derive list of boards from channels
-                boards = [int(ch / 2) for ch in channels]
+                boards = set([int(ch / 2) for ch in channels])
                 for board in boards:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[board]), self._samples_per_datum)
-
-                    print(len(chunk[board]), self._samples_per_datum)
 
                     A_voltages = []
                     B_voltages = []
