@@ -80,6 +80,7 @@ class smu:
             print("---Using modified libsmu backend---")
         else:
             self.libsmu_mod = False
+            print("---Using original libsmu backend---")
 
         # private attribute to hold pysmu session
         self._session = None
