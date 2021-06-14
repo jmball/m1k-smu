@@ -946,6 +946,29 @@ class smu:
             samples_per_chunk = data_per_chunk * self._samples_per_datum
         num_chunks = int(math.ceil(num_samples_requested / samples_per_chunk))
 
+        # if a sweep has been requested and the output is enabled but in the wrong
+        # mode, change it to the correct mode
+        if measurement == "sweep":
+            for ch in channels:
+                dev_ix = self._channel_settings[ch]["dev_ix"]
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                values = self._channel_settings[ch]["sweep_values"]
+                requested_mode = self._channel_settings[ch]["sweep_mode"]
+                current_mode = self._session.devices[dev_ix].channels[dev_channel].mode
+                if (current_mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]) and (
+                    requested_mode == "i"
+                ):
+                    # set first voltage of sweep in requested mode
+                    self.configure_dc({ch: values[0]}, "i")
+                elif (current_mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]) and (
+                    requested_mode == "V"
+                ):
+                    # set first voltage of sweep in requested mode
+                    self.configure_dc({ch: values[0]}, "v")
+                else:
+                    # ignore if starting in HI_Z mode, i.e. output off
+                    pass
+
         # init data container
         # TODO: make more accurate sample timer
         t0 = time.time()
