@@ -1161,7 +1161,9 @@ class smu:
                         ]
                     )
             elif self.ch_per_board == 2:
-                for board in range(self.num_boards):
+                # derive list of boards from channels
+                boards = [int(ch / 2) for ch in channels]
+                for board in boards:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[board]), self._samples_per_datum)
 
@@ -1201,10 +1203,11 @@ class smu:
                         B_currents.append(sum(B_point_currents) / len(B_point_currents))
 
                     # update measured values according to external calibration
-                    if (
-                        self._channel_settings[2 * board]["calibration_mode"]
-                        == "external"
-                    ):
+                    A_cal_mode = self._channel_settings[2 * board]["calibration_mode"]
+                    B_cal_mode = self._channel_settings[2 * board + 1][
+                        "calibration_mode"
+                    ]
+                    if (A_cal_mode == "external") and (2 * board in channels):
                         A_cal = self._channel_settings[2 * board][
                             "external_calibration"
                         ]["A"]
@@ -1220,10 +1223,7 @@ class smu:
                         A_voltages = f_int_mva(A_voltages).tolist()
                         A_currents = f_int_mia(A_currents).tolist()
 
-                    if (
-                        self._channel_settings[2 * board + 1]["calibration_mode"]
-                        == "external"
-                    ):
+                    if (B_cal_mode == "external") and (2 * board + 1 in channels):
                         B_cal = self._channel_settings[2 * board + 1][
                             "external_calibration"
                         ]["B"]
@@ -1243,35 +1243,39 @@ class smu:
 
                     # set status: 0=ok, 1=i>i_theshold, 2=overcurrent (overload on
                     # board input power)
-                    if channel_overcurrents[2 * board] is True:
-                        A_statuses = [2 for i in currents]
-                    else:
-                        A_statuses = [
-                            0 if abs(i) <= self.i_threshold else 1 for i in A_currents
-                        ]
-                    if channel_overcurrents[2 * board + 1] is True:
-                        B_statuses = [2 for i in currents]
-                    else:
-                        B_statuses = [
-                            0 if abs(i) <= self.i_threshold else 1 for i in B_currents
-                        ]
+                    if 2 * board in channels:
+                        if channel_overcurrents[2 * board] is True:
+                            A_statuses = [2 for i in currents]
+                        else:
+                            A_statuses = [
+                                0 if abs(i) <= self.i_threshold else 1
+                                for i in A_currents
+                            ]
+                        processed_data[2 * board].extend(
+                            [
+                                (v, i, t, s)
+                                for v, i, t, s in zip(
+                                    A_voltages, A_currents, timestamps, A_statuses
+                                )
+                            ]
+                        )
 
-                    processed_data[2 * board].extend(
-                        [
-                            (v, i, t, s)
-                            for v, i, t, s in zip(
-                                A_voltages, A_currents, timestamps, A_statuses
-                            )
-                        ]
-                    )
-                    processed_data[2 * board + 1].extend(
-                        [
-                            (v, i, t, s)
-                            for v, i, t, s in zip(
-                                B_voltages, B_currents, timestamps, B_statuses
-                            )
-                        ]
-                    )
+                    if 2 * board + 1 in channels:
+                        if channel_overcurrents[2 * board + 1] is True:
+                            B_statuses = [2 for i in currents]
+                        else:
+                            B_statuses = [
+                                0 if abs(i) <= self.i_threshold else 1
+                                for i in B_currents
+                            ]
+                        processed_data[2 * board + 1].extend(
+                            [
+                                (v, i, t, s)
+                                for v, i, t, s in zip(
+                                    B_voltages, B_currents, timestamps, B_statuses
+                                )
+                            ]
+                        )
 
             cumulative_chunk_lengths += len(chunk)
 
