@@ -41,7 +41,7 @@ def steady_state_v(smu, v=0, delay=0.5, t_end=30):
         t_start = time.time()
         while time.time() - t_start < t_end:
             smu.configure_dc(v, source_mode="v")
-            point_data = smu.measure("dc")
+            point_data = smu.measure(measurement="dc")
             for ch, ch_data in point_data.items():
                 i_data[ch].extend(ch_data)
             writer.writerow(point_data[0])
@@ -66,10 +66,12 @@ with m1k.smu() as smu:
     print("\nRunning steady-state Jsc...")
 
     # enable output
+    v_start = 0.57
+    smu.configure_dc(v_start)
     smu.enable_output(True)
 
     # run mppt
-    jsc_data = steady_state_v(smu, v=0.57, delay=30, t_end=43200)
+    jsc_data = steady_state_v(smu, v=v_start, delay=30, t_end=43200)
 
     # disable output manually because auto-off is false
     smu.enable_output(False)

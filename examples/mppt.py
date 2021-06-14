@@ -82,42 +82,46 @@ def mppt(smu, v_start=0.3, a=1, delay=0.5, t_end=30):
         mppt_data[ch] = []
 
     # init tracker
-    v_starts = [v_start for ch in range(num_channels)]
+    v_starts = {}
+    for ch in range(num_channels):
+        v_starts[ch] = v_start
     smu.configure_dc(v_starts)
-    point_data = smu.measure("dc")
+    point_data = smu.measure(measurement="dc")
     for ch, ch_data in point_data.items():
         mppt_data[ch].extend(ch_data)
 
-    v_nexts = [v_start + 0.01 for ch in range(num_channels)]
+    v_nexts = {}
+    for ch in range(num_channels):
+        v_nexts[ch] = v_start + 0.001
     smu.configure_dc(v_nexts)
-    point_data = smu.measure("dc")
+    point_data = smu.measure(measurement="dc")
     for ch, ch_data in point_data.items():
         mppt_data[ch].extend(ch_data)
 
-    v_news = []
+    v_news = {}
     for ch, ch_data in mppt_data.items():
         v_old = ch_data[0][0]
         v_lat = ch_data[1][0]
         p_old = ch_data[0][0] * ch_data[0][1]
         p_lat = ch_data[1][0] * ch_data[1][1]
-        v_news.append(calc_new_voltage(v_lat, v_old, p_lat, p_old, a))
+        v_news[ch] = calc_new_voltage(v_lat, v_old, p_lat, p_old, a)
 
     # continue mppt
     i = 2
     t_start = time.time()
     while time.time() - t_start < t_end:
         smu.configure_dc(v_news)
-        point_data = smu.measure("dc")
+        point_data = smu.measure(measurement="dc")
         for ch, ch_data in point_data.items():
             mppt_data[ch].extend(ch_data)
 
-        v_news = []
+        v_news = {}
         for ch, ch_data in mppt_data.items():
             v_old = ch_data[i - 1][0]
             v_lat = ch_data[i][0]
             p_old = ch_data[i - 1][0] * ch_data[i - 1][1]
             p_lat = ch_data[i][0] * ch_data[i][1]
-            v_news.append(calc_new_voltage(v_lat, v_old, p_lat, p_old, a))
+            v_news[ch] = calc_new_voltage(v_lat, v_old, p_lat, p_old, a)
 
         i += 1
         time.sleep(delay)
@@ -134,12 +138,17 @@ with m1k.smu() as smu:
     smu.settling_delay = 0.005
 
     # configure channel specific settings for all outputs
-    smu.configure_channel_settings(auto_off=False, four_wire=True, v_range=5)
+    smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
 
     print("\nRunning mppt...")
 
+    # enable output
+    v_start = 0.1
+    smu.configure_dc(v_start)
+    smu.enable_output(True)
+
     # run mppt
-    mppt_data = mppt(smu, v_start=0.1, a=20, delay=0.5, t_end=60)
+    mppt_data = mppt(smu, v_start=v_start, a=20, delay=0.5, t_end=60)
 
     # disable output manually because auto-off is false
     smu.enable_output(False)

@@ -34,8 +34,7 @@ def steady_state_voc(smu, delay=0.5, t_end=30):
     # run steady-state voc
     t_start = time.time()
     while time.time() - t_start < t_end:
-        smu.configure_dc(0, source_mode="i")
-        point_data = smu.measure("dc")
+        point_data = smu.measure(measurement="dc")
         for ch, ch_data in point_data.items():
             voc_data[ch].extend(ch_data)
 
@@ -53,15 +52,16 @@ with m1k.smu() as smu:
     smu.settling_delay = 0.005
 
     # configure channel specific settings for all outputs
-    smu.configure_channel_settings(auto_off=False, four_wire=True, v_range=5)
+    smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
 
     print("\nRunning steady-state Voc...")
+
+    # ensure outputs are disabled, i.e. in HI_Z mode
+    smu.enable_output(False)
 
     # run mppt
     voc_data = steady_state_voc(smu, delay=0.5, t_end=15)
 
-    # disable output manually because auto-off is false
-    smu.enable_output(False)
 
 # plot the processed data
 fig, ax = plt.subplots()

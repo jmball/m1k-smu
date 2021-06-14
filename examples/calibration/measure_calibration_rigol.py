@@ -218,7 +218,7 @@ def measure_voltage_cal(smu, channel, save_file):
     psu.set_output_enable(True, 1)
 
     # set smu to measure voltage in high impedance mode
-    smu.configure_dc(values=0, source_mode="i")
+    smu.enable_output(False, channel)
 
     if save_file.exists() is True:
         write_mode = "a"
@@ -239,7 +239,7 @@ def measure_voltage_cal(smu, channel, save_file):
             dmm_vs = [dmm.measure("voltage", "dc") for _ in range(avs)]
             dmm_v = sum(dmm_vs) / len(dmm_vs)
 
-            smu_v = smu.measure(measurement="dc")[channel][0][0]
+            smu_v = smu.measure(channel, measurement="dc")[channel][0][0]
 
             f.write(f"<{dmm_v:6.4f}, {smu_v:7.5f}>\n")
 
@@ -250,7 +250,6 @@ def measure_voltage_cal(smu, channel, save_file):
         cal_dict[dev_channel]["meas_v"] = cal_ch_meas_v
 
     # turn off instrument outputs
-    smu.enable_output(False)
     psu.set_apply(channel=1, voltage=0, current=max_current)
     psu.set_output_enable(False, 1)
 
@@ -281,8 +280,8 @@ def measure_current_cal(smu, channel, save_file):
     dmm.set_reading_rate("current", "dc", "S")
 
     # set m1k to source voltage, measure current and set voltage to 0
-    smu.configure_dc(values=0, source_mode="v")
-    smu.enable_output(True)
+    smu.configure_dc({channel: 0}, source_mode="v")
+    smu.enable_output(True, channel)
 
     # set psu to source 0 A and enable output
     max_voltage = 5.2
@@ -309,7 +308,7 @@ def measure_current_cal(smu, channel, save_file):
             dmm_is = [-dmm.measure("current", "dc") for _ in range(avs)]
             dmm_i = sum(dmm_is) / len(dmm_is)
 
-            smu_i = smu.measure(measurement="dc")[channel][0][1]
+            smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{dmm_i:6.4f}, {smu_i:7.5f}>\n")
 
@@ -330,7 +329,7 @@ def measure_current_cal(smu, channel, save_file):
             dmm_is = [-dmm.measure("current", "dc") for _ in range(avs)]
             dmm_i = sum(dmm_is) / len(dmm_is)
 
-            smu_i = smu.measure(measurement="dc")[channel][0][1]
+            smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{dmm_i:6.4f}, {smu_i:7.5f}>\n")
 
@@ -341,7 +340,7 @@ def measure_current_cal(smu, channel, save_file):
         cal_dict[dev_channel]["meas_i"] = cal_ch_meas_i
 
     # turn off instrument outputs
-    smu.enable_output(False)
+    smu.enable_output(False, channel)
     psu.set_apply(channel=1, voltage=max_voltage, current=0)
     psu.set_output_enable(False, 1)
 
@@ -373,8 +372,8 @@ def source_voltage_cal(smu, channel, save_file):
     dmm.set_reading_rate("voltage", "dc", "S")
 
     # set smu to source voltage, measure current and set voltage to 0
-    smu.configure_dc(values=0, source_mode="v")
-    smu.enable_output(True)
+    smu.configure_dc({channel: 0}, source_mode="v")
+    smu.enable_output(True, channel)
 
     if save_file.exists() is True:
         write_mode = "a"
@@ -388,14 +387,14 @@ def source_voltage_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_sour_v = []
         for v in cal_voltages:
-            smu.configure_dc(values=float(v), source_mode="v")
+            smu.configure_dc({channel: float(v)}, source_mode="v")
             time.sleep(args.delay)
 
             [dmm.measure("voltage", "dc") for _ in range(dummys)]
             dmm_vs = [dmm.measure("voltage", "dc") for _ in range(avs)]
             dmm_v = sum(dmm_vs) / len(dmm_vs)
 
-            smu_v = smu.measure(measurement="dc")[channel][0][0]
+            smu_v = smu.measure(channel, measurement="dc")[channel][0][0]
 
             f.write(f"<{smu_v:7.5f}, {dmm_v:6.4f}>\n")
             cal_ch_sour_v.append([v, smu_v, dmm_v])
@@ -405,7 +404,7 @@ def source_voltage_cal(smu, channel, save_file):
         cal_dict[dev_channel]["source_v"] = cal_ch_sour_v
 
     # turn off smu outputs
-    smu.enable_output(False)
+    smu.enable_output(False, channel)
 
     print(f"CH{channel + 1} source voltage calibration measurement complete!")
 
@@ -434,8 +433,8 @@ def source_current_cal(smu, channel, save_file):
     dmm.set_reading_rate("current", "dc", "S")
 
     # set smu to source current, measure voltage and set current to 0
-    smu.configure_dc(values=0, source_mode="i")
-    smu.enable_output(True)
+    smu.configure_dc({channel: 0}, source_mode="i")
+    smu.enable_output(True, channel)
 
     if save_file.exists() is True:
         write_mode = "a"
@@ -449,7 +448,7 @@ def source_current_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_sour_i = []
         for i in cal_currents_source:
-            smu.configure_dc(values=float(i), source_mode="i")
+            smu.configure_dc({channel: float(i)}, source_mode="i")
             time.sleep(args.delay)
 
             # reverse polarity as SMU's are seeing opposites
@@ -457,7 +456,7 @@ def source_current_cal(smu, channel, save_file):
             dmm_is = [-dmm.measure("current", "dc") for _ in range(avs)]
             dmm_i = sum(dmm_is) / len(dmm_is)
 
-            smu_i = smu.measure(measurement="dc")[channel][0][1]
+            smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{smu_i:7.5f}, {dmm_i:6.4f}>\n")
             cal_ch_sour_i.append([i, smu_i, dmm_i])
@@ -467,7 +466,7 @@ def source_current_cal(smu, channel, save_file):
         cal_dict[dev_channel]["source_i"] = cal_ch_sour_i
 
     # turn off smu outputs
-    smu.enable_output(False)
+    smu.enable_output(False, channel)
 
     print(f"CH{channel + 1} source voltage calibration measurement complete!")
 

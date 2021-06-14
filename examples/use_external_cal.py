@@ -48,21 +48,24 @@ with m1k.smu(plf=50, ch_per_board=2) as smu:
     smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
 
     # configure a sweep
-    smu.configure_sweep(start=0, stop=1, points=21, dual=False, source_mode="v")
+    smu.configure_sweep(start=0, stop=1, points=21, source_mode="v")
+
+    # enable outputs
+    smu.enable_output(True)
 
     # measure the sweep with internal calibration
     t0 = time.time()
-    data_int = smu.measure("sweep")
+    data_int = smu.measure(measurement="sweep")
     print(f"Sweep time with internal calibration: {time.time() - t0} s")
 
     # measure the sweep with external calibraiton
     smu.use_external_calibration(0, cal_data[0])
     smu.use_external_calibration(1, cal_data[1])
     t0 = time.time()
-    data_ext = smu.measure("sweep")
+    data_ext = smu.measure(measurement="sweep")
     print(f"Sweep time with external calibration: {time.time() - t0} s")
 
-    # disable output manually because auto-off is false
+    # disable outputs manually because auto-off is false
     smu.enable_output(False)
 
 # plot the i, v data

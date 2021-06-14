@@ -109,12 +109,14 @@ def m1k_sweep(start, stop, points):
     print("\nPerforming m1k voltage sweep measurement...")
 
     # configure a sweep
-    smu.configure_sweep(
-        start=start, stop=stop, points=points, dual=False, source_mode="v"
-    )
+    smu.configure_sweep(start=start, stop=stop, points=points, source_mode="v")
+
+    # enable output
+    smu.configure_dc(start)
+    smu.enable_output(True)
 
     # measure the sweep
-    data = smu.measure("sweep")
+    data = smu.measure(measurement="sweep")
 
     # disable output manually because auto-off is false
     smu.enable_output(False)
@@ -165,16 +167,16 @@ def m1k_voc(delay, points):
     for ch in range(num_channels):
         voc_data[ch] = []
 
+    # set ouptut in HI_Z mode
+    smu.enable_output(False)
+
     # run steady-state voc
     for point in range(points):
-        smu.configure_dc(0, source_mode="i")
-        point_data = smu.measure("dc")
+        point_data = smu.measure(measurement="dc")
         for ch, ch_data in point_data.items():
             voc_data[ch].extend(ch_data)
 
         time.sleep(delay)
-
-    smu.enable_output(False)
 
     print("m1k voc measurement complete!")
 
@@ -219,10 +221,13 @@ def m1k_jsc(delay, points):
     for ch in range(num_channels):
         jsc_data[ch] = []
 
+    # configure output
+    smu.configure_dc(0, source_mode="v")
+    smu.enable_output(True)
+
     # run steady-state jsc
     for point in range(points):
-        smu.configure_dc(0, source_mode="v")
-        point_data = smu.measure("dc")
+        point_data = smu.measure(measurement="dc")
         for ch, ch_data in point_data.items():
             jsc_data[ch].extend(ch_data)
 

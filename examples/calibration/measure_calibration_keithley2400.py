@@ -192,7 +192,7 @@ def measure_voltage_cal(smu, channel, save_file):
     keithley2400.write(":SENS:CURR:RANG:AUTO ON")
 
     # set smu to measure voltage in high impedance mode
-    smu.configure_dc(values=0, source_mode="i")
+    smu.enable_output(False, channel)
 
     # set keithley to source zero volts and enable output
     keithley2400.write(":SOUR:VOLT 0")
@@ -216,7 +216,7 @@ def measure_voltage_cal(smu, channel, save_file):
             keithley_data = keithley2400.query_ascii_values(":READ?")
             keithley_v = keithley_data[0]
 
-            smu_v = smu.measure(measurement="dc")[channel][0][0]
+            smu_v = smu.measure(channel, measurement="dc")[channel][0][0]
 
             f.write(f"<{keithley_v:6.4f}, {smu_v:7.5f}>\n")
             cal_ch_meas_v.append([keithley_v, smu_v])
@@ -226,7 +226,6 @@ def measure_voltage_cal(smu, channel, save_file):
         cal_dict[dev_channel]["meas_v"] = cal_ch_meas_v
 
     # turn off smu outputs
-    smu.enable_output(False)
     keithley2400.write(":SOUR:VOLT 0")
     keithley2400.write(":OUTP OFF")
 
@@ -259,7 +258,8 @@ def measure_current_cal(smu, channel, save_file):
     keithley2400.write(":SENS:VOLT:RANG:AUTO ON")
 
     # set m1k to source voltage, measure current and set voltage to 0
-    smu.configure_dc(values=0, source_mode="v")
+    smu.configure_dc({channel: 0}, source_mode="v")
+    smu.enable_output(True, channel)
 
     # set keithley to source zero volts and enable output
     keithley2400.write(":SOUR:CURR 0")
@@ -284,7 +284,7 @@ def measure_current_cal(smu, channel, save_file):
             # reverse polarity as SMU's are seeing opposites
             keithley_i = -keithley_data[1]
 
-            smu_i = smu.measure(measurement="dc")[channel][0][1]
+            smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{keithley_i:6.4f}, {smu_i:7.5f}>\n")
             cal_ch_meas_i.append([keithley_i, smu_i])
@@ -294,7 +294,7 @@ def measure_current_cal(smu, channel, save_file):
         cal_dict[dev_channel]["meas_i"] = cal_ch_meas_i
 
     # turn off smu outputs
-    smu.enable_output(False)
+    smu.enable_output(False, channel)
     keithley2400.write(":SOUR:CURR 0")
     keithley2400.write(":OUTP OFF")
 
@@ -327,7 +327,8 @@ def source_voltage_cal(smu, channel, save_file):
     keithley2400.write(":SENS:VOLT:RANG:AUTO ON")
 
     # set smu to source voltage, measure current and set voltage to 0
-    smu.configure_dc(values=0, source_mode="v")
+    smu.configure_dc({channel: 0}, source_mode="v")
+    smu.enable_output(True, channel)
 
     # set keithley to source zero volts and enable output
     keithley2400.write(":SOUR:CURR 0")
@@ -346,13 +347,13 @@ def source_voltage_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_sour_v = []
         for v in cal_voltages:
-            smu.configure_dc(values=v, source_mode="v")
+            smu.configure_dc({channel: float(v)}, source_mode="v")
             time.sleep(0.1)
 
             keithley_data = keithley2400.query_ascii_values(":READ?")
             keithley_v = keithley_data[0]
 
-            smu_v = smu.measure(measurement="dc")[channel][0][0]
+            smu_v = smu.measure(channel, measurement="dc")[channel][0][0]
 
             f.write(f"<{smu_v:7.5f}, {keithley_v:6.4f}>\n")
             cal_ch_sour_v.append([v, smu_v, keithley_v])
@@ -362,7 +363,7 @@ def source_voltage_cal(smu, channel, save_file):
         cal_dict[dev_channel]["source_v"] = cal_ch_sour_v
 
     # turn off smu outputs
-    smu.enable_output(False)
+    smu.enable_output(False, channel)
     keithley2400.write(":OUTP OFF")
 
     print(f"CH{channel + 1} source voltage calibration measurement complete!")
@@ -394,7 +395,8 @@ def source_current_cal(smu, channel, save_file):
     keithley2400.write(":SENS:CURR:RANG:AUTO ON")
 
     # set smu to source current, measure voltage and set current to 0
-    smu.configure_dc(values=0, source_mode="i")
+    smu.configure_dc({channel: 0}, source_mode="i")
+    smu.enable_output(True, channel)
 
     # set the current compliance
     keithley2400.write(":SENS:CURR:PROT 0.25")
@@ -416,14 +418,14 @@ def source_current_cal(smu, channel, save_file):
         # run through the list of voltages
         cal_ch_sour_i = []
         for i in cal_currents_source:
-            smu.configure_dc(values=i, source_mode="i")
+            smu.configure_dc({channel: float(i)}, source_mode="i")
             time.sleep(0.1)
 
             keithley_data = keithley2400.query_ascii_values(":READ?")
             # reverse polarity as SMU's are seeing opposites
             keithley_i = -keithley_data[1]
 
-            smu_i = smu.measure(measurement="dc")[channel][0][1]
+            smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{smu_i:7.5f}, {keithley_i:6.4f}>\n")
             cal_ch_sour_i.append([i, smu_i, keithley_i])
@@ -433,7 +435,7 @@ def source_current_cal(smu, channel, save_file):
         cal_dict[dev_channel]["source_i"] = cal_ch_sour_i
 
     # turn off smu outputs
-    smu.enable_output(False)
+    smu.enable_output(False, channel)
     keithley2400.write(":OUTP OFF")
 
     print(f"CH{channel + 1} source voltage calibration measurement complete!")

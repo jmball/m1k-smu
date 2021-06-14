@@ -23,12 +23,15 @@ with m1k.smu() as smu:
     smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
 
     # configure a sweep
-    smu.configure_sweep(start=0, stop=0.5, points=21, dual=False, source_mode="v")
+    smu.configure_sweep(start=0, stop=0.5, points=21, source_mode="v")
 
-    # measure the sweep
-    data = smu.measure("sweep")
+    # enable outputs
+    smu.enable_output(True)
 
-    # disable output manually because auto-off is false
+    # measure the sweeps
+    data = smu.measure(measurement="sweep")
+
+    # disable outputs manually because auto-off is false
     smu.enable_output(False)
 
 # plot the data

@@ -5,7 +5,6 @@ import time
 import warnings
 
 import pysmu
-from pysmu.exceptions import DeviceError
 import scipy.interpolate
 
 

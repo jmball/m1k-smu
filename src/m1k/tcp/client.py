@@ -169,29 +169,29 @@ class m1kTCPClient:
         """Get SMU id string."""
         return self._query("idn")
 
-    def use_external_calibration(self, channel=-1):
+    def use_external_calibration(self, channel=None):
         """Use calibration externally to the devices.
 
         Parameters
         ----------
         channel : int
-            Channel number (0-indexed). If `-1` apply to all channels.
+            Channel number (0-indexed). If `None` apply to all channels.
         """
-        self._query(f"cal ext {channel}")
+        self._query(f"cal ext {str(channel)}")
 
-    def use_internal_calibration(self, channel=-1):
+    def use_internal_calibration(self, channel=None):
         """Use calibration internal to the devices.
 
         Parameters
         ----------
         channel : int or `None`
-            Channel number (0-indexed). If `-1` apply to all channels.
+            Channel number (0-indexed). If `None` apply to all channels.
         """
-        self._query(f"cal int {channel}")
+        self._query(f"cal int {str(channel)}")
 
     def configure_channel_settings(
         self,
-        channel=-1,
+        channel=None,
         auto_off=None,
         four_wire=None,
         v_range=None,
@@ -202,7 +202,7 @@ class m1kTCPClient:
         Parameters
         ----------
         channel : int
-            Channel number (0-indexed). If `-1`, apply settings to all channels.
+            Channel number (0-indexed). If `None`, apply settings to all channels.
         auto_off : bool
             Automatically set output to high impedance mode after a measurement.
         four_wire : bool
@@ -214,18 +214,18 @@ class m1kTCPClient:
             Reset all settings to default.
         """
         if auto_off is not None:
-            self._query(f"ao {auto_off} {channel}")
+            self._query(f"ao {int(auto_off)} {str(channel)}")
 
         if four_wire is not None:
-            self._query(f"fw {four_wire} {channel}")
+            self._query(f"fw {int(four_wire)} {str(channel)}")
 
         if v_range is not None:
-            self._query(f"vr {v_range} {channel}")
+            self._query(f"vr {v_range} {str(channel)}")
 
         if default is not None:
-            self._query(f"def {default} {channel}")
+            self._query(f"def {int(default)} {str(channel)}")
 
-    def configure_sweep(self, start, stop, points, dual=False, source_mode="v"):
+    def configure_sweep(self, start, stop, points, source_mode="v"):
         """Configure an output sweep for all channels.
 
         Parameters
@@ -236,53 +236,51 @@ class m1kTCPClient:
             Stop value in V or A.
         points : int
             Number of points in the sweep.
-        dual : bool
-            If `True`, append the reverse sweep as well.
         source_mode : str
             Desired source mode: "v" for voltage, "i" for current.
         """
-        self._query(f"swe {start} {stop} {points} {dual} {source_mode}")
+        self._query(f"swe {start} {stop} {points} {source_mode}")
 
-    def configure_list_sweep(self, values=[], dual=False, source_mode="v"):
+    def configure_list_sweep(self, values={}, source_mode="v"):
         """Configure list sweeps for all channels.
 
         All lists must be the same length.
 
         Parameters
         ----------
-        values : list of lists
-            Lists of values for source sweeps, one sub-list for each channel. The
-            outer list index is the channel index, e.g. passing
-            `[[0, 1, 2], [0, 1, 2]]` will sweep both channels 0 and 1 with values of
-            `[0, 1, 2]`. All sub-lists must be the same length.
-        dual : bool
-            If `True`, append the reverse sweep as well.
+        values : dict of lists or list
+            Dictionary of lists of source values for sweeps, of the form
+            {channel: [source values]}. If a list is given, this list of values will
+            be set for all channels.
         source_mode : str
             Desired source mode during measurement: "v" for voltage, "i" for current.
         """
-        # strip whitespace from list, server uses spaces as separator for params in msg
-        self._query(f"lst {str(values).replace(' ', '')} {dual} {source_mode}")
+        # strip whitespace from dict, server uses spaces as separator for params in msg
+        self._query(f"lst {str(values).replace(' ', '')} {source_mode}")
 
-    def configure_dc(self, values=[], source_mode="v"):
+    def configure_dc(self, values={}, source_mode="v"):
         """Configure a DC output measurement for all channels.
 
         Parameters
         ----------
-        values : list of float or int; float or int
-            Desired output values in V or A depending on source mode. The list indeices
-            match the channel numbers. If a numeric value is given it is applied to all
-            channels.
+        values : dict of float or int; float or int
+            Dictionary of output values, of the form {channel: dc_value}. If a value
+            of numeric type is given it is applied to all channels.
         source_mode : str
             Desired source mode during measurement: "v" for voltage, "i" for current.
         """
         # strip whitespace from list, server uses spaces as separator for params in msg
         self._query(f"dc {str(values).replace(' ', '')} {source_mode}")
 
-    def measure(self, measurement="dc", allow_chunking=False):
+    def measure(self, channels=None, measurement="dc", allow_chunking=False):
         """Perform the configured sweep or dc measurements for all channels.
 
         Parameters
         ----------
+        channels : list of int or int
+            List of channel numbers (0-indexed) to measure. If only one channel is
+            measured its number can be provided as an int. If `None`, measure all
+            channels.
         measurement : {"dc", "sweep"}
             Measurement to perform based on stored settings from configure_sweep
             ("sweep") or configure_dc ("dc", default) method calls.
@@ -298,19 +296,25 @@ class m1kTCPClient:
         data : dict
             Data dictionary of the form: {channel: data}.
         """
-        return dict(self._query(f"meas {measurement} {allow_chunking}"))
+        return dict(
+            self._query(
+                f"meas {str(channels).replace(' ', '')} {measurement} "
+                + f"{int(allow_chunking)}"
+            )
+        )
 
-    def enable_output(self, enable, channel=-1):
+    def enable_output(self, enable, channels=None):
         """Enable/disable channel outputs.
 
         Paramters
         ---------
         enable : bool
             Turn on (`True`) or turn off (`False`) channel outputs.
-        channel : int or None
-            Channel number (0-indexed). If `-1`, apply to all channels.
+        channels : list of int, int, or None
+            List of channel numbers (0-indexed). If only one channel is required its
+            number can be provided as an int. If `None`, apply to all channels.
         """
-        self._query(f"eo {enable} {channel}")
+        self._query(f"eo {int(enable)} {str(channels).replace(' ', '')}")
 
     def get_channel_id(self, channel):
         """Get the serial number of requested channel.
@@ -327,7 +331,7 @@ class m1kTCPClient:
         """
         return self._query(f"idn {channel}")
 
-    def set_leds(self, channel=-1, R=False, G=False, B=False):
+    def set_leds(self, channel=None, R=False, G=False, B=False):
         """Set LED configuration for a channel(s).
 
         Parameters
@@ -341,7 +345,7 @@ class m1kTCPClient:
         B : bool
             Turn on (True) or off (False) the blue LED.
         """
-        self._query(f"led {R} {G} {B} {channel}")
+        self._query(f"led {int(R)} {int(G)} {int(B)} {str(channel)}")
 
 
 if __name__ == "__main__":
