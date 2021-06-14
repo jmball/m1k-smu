@@ -1033,6 +1033,7 @@ class smu:
                     values = self._channel_settings[ch]["sweep_values"]
                     requested_mode = self._channel_settings[ch]["sweep_mode"]
                     self.configure_dc(values[-1], requested_mode)
+                    print(ch, values[-1])
 
             if self._libsmu_mod is True:
                 # enabled channels will still be on
