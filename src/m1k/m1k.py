@@ -876,7 +876,9 @@ class smu:
 
         # re-format raw data to: (voltage, current, timestamp, status)
         # and process to account for nplc and settling delay if required
-        processed_data = self._process_data(raw_data, channels, overcurrents, t0)
+        processed_data = self._process_data(
+            raw_data, channels, measurement, overcurrents, t0
+        )
 
         # return processed_data
         return processed_data
