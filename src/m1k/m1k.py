@@ -1064,8 +1064,6 @@ class smu:
                 channel_overcurrents[ch].append(chunk_overcurrents[ch])
             channel_overcurrents[ch] = any(channel_overcurrents[ch])
 
-        print(overcurrents, channel_overcurrents)
-
         # init processed data container
         processed_data = {}
         for ch in channels:
@@ -1077,6 +1075,8 @@ class smu:
                 for ch in channels:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[ch]), self._samples_per_datum)
+
+                    print(len(chunk[ch]), self._samples_per_datum)
 
                     A_voltages = []
                     B_voltages = []
