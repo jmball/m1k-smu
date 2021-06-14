@@ -1076,8 +1076,6 @@ class smu:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[ch]), self._samples_per_datum)
 
-                    print(len(chunk[ch]), self._samples_per_datum)
-
                     A_voltages = []
                     B_voltages = []
                     currents = []
@@ -1166,6 +1164,8 @@ class smu:
                 for board in boards:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[board]), self._samples_per_datum)
+
+                    print(len(chunk[board]), self._samples_per_datum)
 
                     A_voltages = []
                     B_voltages = []
