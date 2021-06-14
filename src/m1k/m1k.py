@@ -930,6 +930,8 @@ class smu:
             if len(samples) > num_samples_requested:
                 num_samples_requested = len(samples)
 
+        print(num_samples_requested, self._samples_per_datum)
+
         # decide whether the request is allowed
         if num_samples_requested > self._maximum_buffer_size:
             if allow_chunking is False:
