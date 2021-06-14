@@ -1009,8 +1009,6 @@ class smu:
             # read the data chunk and add to raw data container
             raw_data.append(self._session.read(samples_per_chunk, self.read_timeout))
 
-            print(samples_per_chunk)
-
             chunk_overcurrents = {}
             for ch in channels:
                 chunk_overcurrents[ch] = self._session.devices[dev_ix].overcurrent
@@ -1053,7 +1051,7 @@ class smu:
 
         return raw_data, overcurrents, t0
 
-    def _process_data(self, raw_data, channels, overcurrents, t0):
+    def _process_data(self, raw_data, channels, measurement, overcurrents, t0):
         """Process raw data accounting for NPLC and settling delay.
 
         Parameters
@@ -1062,6 +1060,9 @@ class smu:
             Raw data dictionary.
         channels : list of int or int
             List of channel numbers (0-indexed) to extract from raw data.
+        measurement : {"dc", "sweep"}
+            Measurement to perform based on stored settings from configure_sweep
+            ("sweep") or configure_dc ("dc") method calls.
         overcurrents : list of dict
             List of channel overcurrent statuses for each chunk.
         t0 : float
@@ -1094,8 +1095,6 @@ class smu:
                 for ch in channels:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[ch]), self._samples_per_datum)
-
-                    print(start_ixs)
 
                     A_voltages = []
                     B_voltages = []
@@ -1297,6 +1296,12 @@ class smu:
                         )
 
             cumulative_chunk_lengths += len(chunk)
+
+        # if sweep lists are different lengths, discard data that wasn't requested
+        if measurement == "sweep":
+            for ch in channels:
+                values = self._channel_settings[ch]["sweep_values"]
+                processed_data[ch] = processed_data[ch][: len(values)]
 
         return processed_data
 
