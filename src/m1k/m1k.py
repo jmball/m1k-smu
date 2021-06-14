@@ -930,8 +930,6 @@ class smu:
             if len(samples) > num_samples_requested:
                 num_samples_requested = len(samples)
 
-        print(num_samples_requested, self._samples_per_datum)
-
         # decide whether the request is allowed
         if num_samples_requested > self._maximum_buffer_size:
             if allow_chunking is False:
@@ -1010,6 +1008,8 @@ class smu:
 
             # read the data chunk and add to raw data container
             raw_data.append(self._session.read(len(chunk), self.read_timeout))
+
+            print(len(chunk))
 
             chunk_overcurrents = {}
             for ch in channels:
@@ -1094,6 +1094,8 @@ class smu:
                 for ch in channels:
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[ch]), self._samples_per_datum)
+
+                    print(start_ixs)
 
                     A_voltages = []
                     B_voltages = []
