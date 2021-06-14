@@ -37,7 +37,7 @@ class smu:
         plf=50,
         ch_per_board=2,
         i_threshold=0.2,
-        read_timeout=20000,
+        read_timeout=2000,
     ):
         """Initialise object.
 
