@@ -266,7 +266,12 @@ class smu:
         if self._session is None:
             # the session wasn't provided and no session already exists so create one
             self._session = pysmu.Session(add_all=False)
-            self._session.scan()
+            num_available_devices = self._session.scan()
+            if num_available_devices == 0:
+                warnings.warn(
+                    "No devices available to connect to session. Are the devices "
+                    + "powered correctly?"
+                )
         else:
             raise RuntimeError("Cannot connect more devices to the existing session.")
 
