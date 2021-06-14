@@ -907,7 +907,7 @@ class smu:
         t0 : float
             Reading start time in s.
         """
-        if self._libsmu_mod is False:
+        if (self._libsmu_mod is False) or (measurement == "sweep"):
             # get current mode to determine whether output needs to be re-enabled
             start_modes = {}
             for ch in channels:
