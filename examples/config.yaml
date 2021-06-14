@@ -7,5 +7,3 @@ board_mapping:
 cal_data_folder: './calibration/data'
 
 i_threshold: 0.05
-
-libsmu_mod: True

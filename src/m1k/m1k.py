@@ -38,7 +38,6 @@ class smu:
         ch_per_board=2,
         i_threshold=0.2,
         read_timeout=20000,
-        libsmu_mod=False,
     ):
         """Initialise object.
 
@@ -74,7 +73,13 @@ class smu:
 
         self.read_timeout = read_timeout
         self.i_threshold = abs(i_threshold)
-        self.libsmu_mod = libsmu_mod
+
+        # determine whether using version with libsmu mod
+        if pysmu.__version__.endswith("-mod") is True:
+            self.libsmu_mod = True
+            print("---Using modified libsmu backend---")
+        else:
+            self.libsmu_mod = False
 
         # private attribute to hold pysmu session
         self._session = None
@@ -974,6 +979,13 @@ class smu:
             for ch in channels:
                 chunk_overcurrents[ch] = self._session.devices[dev_ix].overcurrent
             overcurrents.append(chunk_overcurrents)
+
+            # re-set output modes if using unmodified backend
+            if self.libsmu_mod is False:
+                for ch, mode in start_modes.items():
+                    dev_ix = self._channel_settings[ch]["dev_ix"]
+                    dev_channel = self._channel_settings[ch]["dev_channel"]
+                    self._session.devices[dev_ix].channels[dev_channel].mode = mode
 
         # disable/enable outputs as required
         for ch in channels:

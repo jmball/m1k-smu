@@ -75,13 +75,6 @@ if config is not None:
             "Channels per board setting not found. Using default channels per board."
         )
 
-    try:
-        init_args["libsmu_mod"] = config["libsmu_mod"]
-    except KeyError:
-        warnings.warn(
-            "Channels per board setting not found. Using default channels per board."
-        )
-
 # init smu object and connect boards
 smu = m1k.smu(**init_args)
 smu.connect(serials)
