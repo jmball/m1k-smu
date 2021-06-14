@@ -1064,6 +1064,8 @@ class smu:
                 channel_overcurrents[ch].append(chunk_overcurrents[ch])
             channel_overcurrents[ch] = any(channel_overcurrents[ch])
 
+        print(overcurrents, channel_overcurrents)
+
         # init processed data container
         processed_data = {}
         for ch in channels:
