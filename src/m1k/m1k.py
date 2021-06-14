@@ -742,7 +742,7 @@ class smu:
                     # channel LO connected to 2.5 V
                     offset = 2.5
 
-            sweep = [x + offset for x in ch_values[ch]]
+            sweep = [x + offset for x in ch_values]
 
             # update set values according to external calibration
             if self._channel_settings[ch]["calibration_mode"] == "external":
