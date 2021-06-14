@@ -1095,8 +1095,9 @@ class smu:
         for chunk in raw_data:
             if self.ch_per_board == 1:
                 for ch in channels:
+                    dev_ix = self._channel_settings[ch]["dev_ix"]
                     # start indices for each measurement value
-                    start_ixs = range(0, len(chunk[ch]), self._samples_per_datum)
+                    start_ixs = range(0, len(chunk[dev_ix]), self._samples_per_datum)
 
                     A_voltages = []
                     B_voltages = []
@@ -1104,7 +1105,7 @@ class smu:
                     timestamps = []
                     for i in start_ixs:
                         # final point can overlap with start of next voltage so cut it
-                        data_slice = chunk[ch][i : i + self._samples_per_datum - 1]
+                        data_slice = chunk[dev_ix][i : i + self._samples_per_datum - 1]
                         # discard settling delay data
                         data_slice = data_slice[self._settling_delay_samples :]
 
@@ -1184,8 +1185,9 @@ class smu:
                 # derive list of boards from channels
                 boards = set([int(ch / 2) for ch in channels])
                 for board in boards:
+                    dev_ix = self._channel_settings[2 * board]["dev_ix"]
                     # start indices for each measurement value
-                    start_ixs = range(0, len(chunk[board]), self._samples_per_datum)
+                    start_ixs = range(0, len(chunk[dev_ix]), self._samples_per_datum)
 
                     A_voltages = []
                     B_voltages = []
@@ -1194,7 +1196,7 @@ class smu:
                     timestamps = []
                     for i in start_ixs:
                         # final point can overlap with start of next voltage so cut it
-                        data_slice = chunk[board][i : i + self._samples_per_datum - 1]
+                        data_slice = chunk[dev_ix][i : i + self._samples_per_datum - 1]
                         # discard settling delay data
                         data_slice = data_slice[self._settling_delay_samples :]
 
