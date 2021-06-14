@@ -472,27 +472,30 @@ t = time.time()
 for board in range(smu.num_boards):
     board_serial = smu.get_channel_id(2 * board)
 
-    # m1k internal calibration file
-    save_file = cal_data_folder.joinpath(f"cal_{int(t)}_{board_serial}.txt")
+    cal = input(f"\nDo you wish to calibrate {board_serial}? [y/n] ")
 
-    # save calibration dictionary in same folder
-    save_file_dict = cal_data_folder.joinpath(f"cal_{int(t)}_{board_serial}.yaml")
-    cal_dict = {
-        "A": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
-        "B": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
-    }
+    if cal == "y":
+        # m1k internal calibration file
+        save_file = cal_data_folder.joinpath(f"cal_{int(t)}_{board_serial}.txt")
 
-    # get the channel numbers as seen from hardware, i.e. 1-indexed
-    channel_A_num = 2 * board
-    channel_B_num = 2 * board + 1
+        # save calibration dictionary in same folder
+        save_file_dict = cal_data_folder.joinpath(f"cal_{int(t)}_{board_serial}.yaml")
+        cal_dict = {
+            "A": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
+            "B": {"meas_v": None, "meas_i": None, "source_v": None, "source_i": None},
+        }
 
-    # run calibrations
-    channel_cal(smu, channel_A_num, save_file)
-    channel_cal(smu, channel_B_num, save_file)
+        # get the channel numbers as seen from hardware, i.e. 1-indexed
+        channel_A_num = 2 * board
+        channel_B_num = 2 * board + 1
 
-    # export calibration dictionary to a yaml file
-    with open(save_file_dict, "w") as f:
-        yaml.dump(cal_dict, f)
+        # run calibrations
+        channel_cal(smu, channel_A_num, save_file)
+        channel_cal(smu, channel_B_num, save_file)
+
+        # export calibration dictionary to a yaml file
+        with open(save_file_dict, "w") as f:
+            yaml.dump(cal_dict, f)
 
 smu.set_leds(R=True)
 
