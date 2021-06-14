@@ -54,13 +54,6 @@ class smu:
             this threshold.
         read_timeout : int
             Timeout in ms for reading data.
-        libsmu_mod : bool
-            Set to `True` if the modified version (https://github.com/jmball/libsmu)
-            of libsmu is being used as the backend. This modified version doesn't
-            change the output mode of a channel after a call to `pysmu.Session.run()`,
-            i.e. a measurement. Set to `False` if the original unmodified is being used
-            as the backend. This unmodified version always resets a channel to `HI_Z`
-            mode after a measurement.
         """
         self._plf = plf
 
@@ -74,12 +67,12 @@ class smu:
         self.read_timeout = read_timeout
         self.i_threshold = abs(i_threshold)
 
-        # determine whether using version with libsmu mod
+        # determine whether using backend version with libsmu mod
         if pysmu.__version__.endswith("-mod") is True:
-            self.libsmu_mod = True
+            self._libsmu_mod = True
             print("---Using modified libsmu backend---")
         else:
-            self.libsmu_mod = False
+            self._libsmu_mod = False
             print("---Using original libsmu backend---")
 
         # private attribute to hold pysmu session
@@ -904,7 +897,7 @@ class smu:
         t0 : float
             Reading start time in s.
         """
-        if self.libsmu_mod is False:
+        if self._libsmu_mod is False:
             # get current mode to determine whether output needs to be re-enabled
             start_modes = {}
             for ch in channels:
@@ -982,7 +975,7 @@ class smu:
             overcurrents.append(chunk_overcurrents)
 
             # re-set output modes if using unmodified backend
-            if self.libsmu_mod is False:
+            if self._libsmu_mod is False:
                 for ch, mode in start_modes.items():
                     dev_ix = self._channel_settings[ch]["dev_ix"]
                     dev_channel = self._channel_settings[ch]["dev_channel"]
@@ -990,7 +983,7 @@ class smu:
 
         # disable/enable outputs as required
         for ch in channels:
-            if self.libsmu_mod is True:
+            if self._libsmu_mod is True:
                 if self._channel_settings[ch]["auto_off"] is True:
                     self.enable_output(False, ch)
             else:
@@ -1331,7 +1324,7 @@ class smu:
                 self._session.read(1, self.read_timeout)
 
                 # if libsmu mod is not available the output turns off after the run
-                if self.libsmu_mod is False:
+                if self._libsmu_mod is False:
                     self._session.devices[dev_ix].channels[dev_channel].mode = mode
             else:
                 if self._channel_settings[ch]["four_wire"] is True:
