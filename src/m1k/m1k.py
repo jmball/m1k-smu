@@ -1004,12 +1004,12 @@ class smu:
                     self._session.devices[dev_ix].channels[dev_channel].write(chunk)
 
             # run scans
-            self._session.run(len(chunk))
+            self._session.run(samples_per_chunk)
 
             # read the data chunk and add to raw data container
-            raw_data.append(self._session.read(len(chunk), self.read_timeout))
+            raw_data.append(self._session.read(samples_per_chunk, self.read_timeout))
 
-            print(len(chunk))
+            print(samples_per_chunk)
 
             chunk_overcurrents = {}
             for ch in channels:
