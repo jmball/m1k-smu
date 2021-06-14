@@ -979,6 +979,11 @@ class smu:
                     # ignore if starting in HI_Z mode, i.e. output off
                     pass
 
+                # update start modes
+                start_modes[ch] = (
+                    self._session.devices[dev_ix].channels[dev_channel].mode
+                )
+
         # init data container
         # TODO: make more accurate sample timer
         t0 = time.time()
@@ -1018,7 +1023,17 @@ class smu:
 
         # disable/enable outputs as required
         for ch in channels:
+            # if a sweep has been performed update the dc output to the last value to
+            # avoid unexpected changes to the output on subsequent enable/disables
+            if measurement == "sweep":
+                # only update if output was on during measurement
+                if start_modes[ch] not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                    values = self._channel_settings[ch]["sweep_values"]
+                    requested_mode = self._channel_settings[ch]["sweep_mode"]
+                    self.configure_dc(values[-1], requested_mode)
+
             if self._libsmu_mod is True:
+                # enabled channels will still be on
                 if self._channel_settings[ch]["auto_off"] is True:
                     self.enable_output(False, ch)
             else:
@@ -1027,7 +1042,7 @@ class smu:
                         self.enable_output(True, ch)
                     else:
                         # although output turns off after measurement run, it doesn't
-                        # re-set the channel mode in the library to HI_Z so force it
+                        # re-set the channel mode in the backend to HI_Z so force it
                         # manually here
                         self.enable_output(False, ch)
                 else:
