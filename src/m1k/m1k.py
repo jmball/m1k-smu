@@ -994,6 +994,8 @@ class smu:
                 samples = ch_samples[ch]
                 chunk = samples[i * samples_per_chunk : (i + 1) * samples_per_chunk]
                 if chunk != []:
+                    # flush write and read buffers
+                    self._session.devices[dev_ix].flush(int(dev_channel == "B"), True)
                     self._session.devices[dev_ix].channels[dev_channel].write(chunk)
 
             # run scans
