@@ -5,6 +5,7 @@ import time
 import warnings
 
 import pysmu
+from pysmu.exceptions import DeviceError
 import scipy.interpolate
 
 
@@ -99,6 +100,11 @@ class smu:
 
         # some functions allow retries if errors occur
         self._retries = 3
+
+        # keep a private cache of channel states that gets updated when enable_outputs
+        # is called. This is used to reset the enabled state after a reconnect if a
+        # device error is encountered
+        self._enabled_cache = {}
 
     def __del__(self):
         """Try to disconnect."""
@@ -341,6 +347,7 @@ class smu:
         self._nplc_samples = 0
         self._settling_delay_samples = 0
         self._samples_per_datum = 0
+        self._enabled_cache = {}
 
         # init with default settings
         for ch in range(self.num_channels):
@@ -426,7 +433,6 @@ class smu:
 
     def _reconnect(self):
         """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
-        input("Attempting reconnect. Press Enter to continue...")
         # remove all devices from the session
         for dev in self._session.devices:
             try:
@@ -450,6 +456,10 @@ class smu:
 
         # update board mapping
         self._map_boards()
+
+        # attempt to re-enable outputs according to cache
+        for ch, enable in self._enabled_cache.items():
+            self.enable_output(enable, ch)
 
     def disconnect(self):
         """Disconnect all devices from the session.
@@ -1363,6 +1373,10 @@ class smu:
         for ch in channels:
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
+
+            # cache enable setting in case a reconnect is required
+            self._enabled_cache[ch] = enable
+
             if enable is True:
                 # write dc value to output
                 dc_values = self._channel_settings[ch]["dc_values"]
