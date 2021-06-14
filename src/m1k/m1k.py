@@ -100,6 +100,10 @@ class smu:
         # some functions allow retries if errors occur
         self._retries = 3
 
+    def __del__(self):
+        """Try to disconnect."""
+        self.disconnect()
+
     def __enter__(self):
         """Enter the runtime context related to this object."""
         return self
@@ -268,9 +272,9 @@ class smu:
             self._session = pysmu.Session(add_all=False)
             num_available_devices = self._session.scan()
             if num_available_devices == 0:
-                warnings.warn(
-                    "No devices available to connect to session. Are the devices "
-                    + "powered correctly?"
+                raise RuntimeError(
+                    "Cannot connect to SMU, no channels available. Check SMU is "
+                    + "powered on and try again."
                 )
         else:
             raise RuntimeError("Cannot connect more devices to the existing session.")
@@ -453,23 +457,24 @@ class smu:
         Disconnecting individual devices would change the remaining channel's indices
         so is forbidden.
         """
-        # disable outputs and reset LEDs
-        self.enable_output(False)
-        self.set_leds(R=True)
+        if self._session is not None:
+            # disable outputs and reset LEDs
+            self.enable_output(False)
+            self.set_leds(R=True)
 
-        # remove devices from session
-        for dev in self._session.devices:
-            try:
-                self._session.remove(dev)
-            except pysmu.SessionError:
-                self._session.remove(dev, True)
+            # remove devices from session
+            for dev in self._session.devices:
+                try:
+                    self._session.remove(dev)
+                except pysmu.SessionError:
+                    self._session.remove(dev, True)
 
-        # reset channel settings
-        self._channel_settings = {}
+            # reset channel settings
+            self._channel_settings = {}
 
-        # destroy the session
-        del self._session
-        self._session = None
+            # destroy the session
+            del self._session
+            self._session = None
 
     def use_external_calibration(self, channel, data=None):
         """Store measurement data used to calibrate a channel externally to the device.
