@@ -699,21 +699,21 @@ class smu:
         for ch in range(self.num_channels):
             self._channel_settings[ch]["sweep_mode"] = source_mode
 
-            if source_mode == "v":
-                if self._channel_settings[ch]["v_range"] == 2.5:
-                    # channel LO connected to 2.5 V
-                    start += 2.5
-                    stop += 2.5
+            # if source_mode == "v":
+            #     if self._channel_settings[ch]["v_range"] == 2.5:
+            #         # channel LO connected to 2.5 V
+            #         start += 2.5
+            #         stop += 2.5
 
             step = (stop - start) / (points - 1)
             values = [x * step + start for x in range(points)]
 
-            # update set values according to external calibration
-            if self._channel_settings[ch]["calibration_mode"] == "external":
-                dev_channel = self._channel_settings[ch]["dev_channel"]
-                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
-                f_int = cal[f"source_{source_mode}"]["set"]
-                values = f_int(values).tolist()
+            # # update set values according to external calibration
+            # if self._channel_settings[ch]["calibration_mode"] == "external":
+            #     dev_channel = self._channel_settings[ch]["dev_channel"]
+            #     cal = self._channel_settings[ch]["external_calibration"][dev_channel]
+            #     f_int = cal[f"source_{source_mode}"]["set"]
+            #     values = f_int(values).tolist()
 
             self._channel_settings[ch]["sweep_values"] = values
 
@@ -742,23 +742,23 @@ class smu:
                 values_dict[ch] = values
             values = values_dict
 
-        for ch, ch_values in values.items():
+        for ch, sweep in values.items():
             self._channel_settings[ch]["sweep_mode"] = source_mode
 
-            offset = 0
-            if source_mode == "v":
-                if self._channel_settings[ch]["v_range"] == 2.5:
-                    # channel LO connected to 2.5 V
-                    offset = 2.5
+            # offset = 0
+            # if source_mode == "v":
+            #     if self._channel_settings[ch]["v_range"] == 2.5:
+            #         # channel LO connected to 2.5 V
+            #         offset = 2.5
 
-            sweep = [x + offset for x in ch_values]
+            # sweep = [x + offset for x in sweep]
 
-            # update set values according to external calibration
-            if self._channel_settings[ch]["calibration_mode"] == "external":
-                dev_channel = self._channel_settings[ch]["dev_channel"]
-                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
-                f_int = cal[f"source_{source_mode}"]["set"]
-                sweep = f_int(sweep).tolist()
+            # # update set values according to external calibration
+            # if self._channel_settings[ch]["calibration_mode"] == "external":
+            #     dev_channel = self._channel_settings[ch]["dev_channel"]
+            #     cal = self._channel_settings[ch]["external_calibration"][dev_channel]
+            #     f_int = cal[f"source_{source_mode}"]["set"]
+            #     sweep = f_int(sweep).tolist()
 
             self._channel_settings[ch]["sweep_values"] = sweep
 
@@ -790,17 +790,17 @@ class smu:
         for ch, ch_value in values.items():
             self._channel_settings[ch]["source_mode"] = source_mode
 
-            if source_mode == "v":
-                if self._channel_settings[ch]["v_range"] == 2.5:
-                    # channel LO connected to 2.5 V
-                    ch_value += 2.5
+            # if source_mode == "v":
+            #     if self._channel_settings[ch]["v_range"] == 2.5:
+            #         # channel LO connected to 2.5 V
+            #         ch_value += 2.5
 
-            # update set value according to external calibration
-            if self._channel_settings[ch]["calibration_mode"] == "external":
-                dev_channel = self._channel_settings[ch]["dev_channel"]
-                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
-                f_int = cal[f"source_{source_mode}"]["set"]
-                ch_value = float(f_int(ch_value))
+            # # update set value according to external calibration
+            # if self._channel_settings[ch]["calibration_mode"] == "external":
+            #     dev_channel = self._channel_settings[ch]["dev_channel"]
+            #     cal = self._channel_settings[ch]["external_calibration"][dev_channel]
+            #     f_int = cal[f"source_{source_mode}"]["set"]
+            #     ch_value = float(f_int(ch_value))
 
             self._channel_settings[ch]["dc_values"] = [ch_value]
 
@@ -934,6 +934,24 @@ class smu:
         num_samples_requested = 0
         for ch in channels:
             values = self._channel_settings[ch][f"{measurement}_values"]
+            meas_mode = self._channel_settings[ch][f"{measurement}_mode"]
+
+            # add offset if lo is 2.5V
+            offset = 0
+            if meas_mode == "v":
+                if self._channel_settings[ch]["v_range"] == 2.5:
+                    # channel LO connected to 2.5 V
+                    offset = 2.5
+
+            values = [x + offset for x in values]
+
+            # update set values according to external calibration
+            if self._channel_settings[ch]["calibration_mode"] == "external":
+                dev_channel = self._channel_settings[ch]["dev_channel"]
+                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
+                f_int = cal[f"source_{meas_mode}"]["set"]
+                values = f_int(values).tolist()
+
             samples = []
             for value in values:
                 samples += [value] * self._samples_per_datum
@@ -1377,18 +1395,37 @@ class smu:
             self._enabled_cache[ch] = enable
 
             if enable is True:
-                # write dc value to output
                 dc_values = self._channel_settings[ch]["dc_values"]
+                source_mode = self._channel_settings[ch]["source_mode"]
+
+                # add offset is LO is 2.5 V
+                offset = 0
+                if source_mode == "v":
+                    if self._channel_settings[ch]["v_range"] == 2.5:
+                        # channel LO connected to 2.5 V
+                        offset = 2.5
+                dc_values = [x + offset for x in dc_values]
+
+                # update set value according to external calibration
+                if self._channel_settings[ch]["calibration_mode"] == "external":
+                    dev_channel = self._channel_settings[ch]["dev_channel"]
+                    cal = self._channel_settings[ch]["external_calibration"][
+                        dev_channel
+                    ]
+                    f_int = cal[f"source_{source_mode}"]["set"]
+                    dc_values = f_int(dc_values).tolist()
+
+                # write dc value
                 self._session.devices[dev_ix].channels[dev_channel].write(dc_values)
 
                 # determine source mode
-                if self._channel_settings[ch]["four_wire"] is True:
+                if source_mode is True:
                     if self._channel_settings[ch]["source_mode"] == "v":
                         mode = pysmu.Mode.SVMI_SPLIT
                     else:
                         mode = pysmu.Mode.SIMV_SPLIT
                 else:
-                    if self._channel_settings[ch]["source_mode"] == "v":
+                    if source_mode == "v":
                         mode = pysmu.Mode.SVMI
                     else:
                         mode = pysmu.Mode.SIMV
