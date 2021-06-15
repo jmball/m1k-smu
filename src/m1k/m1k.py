@@ -699,23 +699,10 @@ class smu:
         for ch in range(self.num_channels):
             self._channel_settings[ch]["sweep_mode"] = source_mode
 
-            # if source_mode == "v":
-            #     if self._channel_settings[ch]["v_range"] == 2.5:
-            #         # channel LO connected to 2.5 V
-            #         start += 2.5
-            #         stop += 2.5
-
             step = (stop - start) / (points - 1)
-            values = [x * step + start for x in range(points)]
+            sweep = [x * step + start for x in range(points)]
 
-            # # update set values according to external calibration
-            # if self._channel_settings[ch]["calibration_mode"] == "external":
-            #     dev_channel = self._channel_settings[ch]["dev_channel"]
-            #     cal = self._channel_settings[ch]["external_calibration"][dev_channel]
-            #     f_int = cal[f"source_{source_mode}"]["set"]
-            #     values = f_int(values).tolist()
-
-            self._channel_settings[ch]["sweep_values"] = values
+            self._channel_settings[ch]["sweep_values"] = sweep
 
     def configure_list_sweep(self, values={}, source_mode="v"):
         """Configure list sweeps.
@@ -744,22 +731,6 @@ class smu:
 
         for ch, sweep in values.items():
             self._channel_settings[ch]["sweep_mode"] = source_mode
-
-            # offset = 0
-            # if source_mode == "v":
-            #     if self._channel_settings[ch]["v_range"] == 2.5:
-            #         # channel LO connected to 2.5 V
-            #         offset = 2.5
-
-            # sweep = [x + offset for x in sweep]
-
-            # # update set values according to external calibration
-            # if self._channel_settings[ch]["calibration_mode"] == "external":
-            #     dev_channel = self._channel_settings[ch]["dev_channel"]
-            #     cal = self._channel_settings[ch]["external_calibration"][dev_channel]
-            #     f_int = cal[f"source_{source_mode}"]["set"]
-            #     sweep = f_int(sweep).tolist()
-
             self._channel_settings[ch]["sweep_values"] = sweep
 
     def configure_dc(self, values={}, source_mode="v"):
@@ -789,19 +760,6 @@ class smu:
         # setup channel settings for a dc measurement
         for ch, ch_value in values.items():
             self._channel_settings[ch]["source_mode"] = source_mode
-
-            # if source_mode == "v":
-            #     if self._channel_settings[ch]["v_range"] == 2.5:
-            #         # channel LO connected to 2.5 V
-            #         ch_value += 2.5
-
-            # # update set value according to external calibration
-            # if self._channel_settings[ch]["calibration_mode"] == "external":
-            #     dev_channel = self._channel_settings[ch]["dev_channel"]
-            #     cal = self._channel_settings[ch]["external_calibration"][dev_channel]
-            #     f_int = cal[f"source_{source_mode}"]["set"]
-            #     ch_value = float(f_int(ch_value))
-
             self._channel_settings[ch]["dc_values"] = [ch_value]
 
         # if outputs are currently enabled, update their values
