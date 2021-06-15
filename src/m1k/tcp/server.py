@@ -282,6 +282,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.bind((HOST, PORT))
     s.listen()
 
+    print(f"SMU server started listening on {HOST}:{PORT}")
+
     # add client connections to queue for worker
     while True:
         q.put_nowait(s.accept())
