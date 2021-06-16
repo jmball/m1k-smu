@@ -133,15 +133,14 @@ print("\nConnecting to SMU...")
 smu = m1k.smu(plf=args.plf, ch_per_board=2)
 
 # get board serial mapping
-board_mapping_file = cwd.parent.joinpath("board_mapping.yaml")
-with open(board_mapping_file, "r") as f:
-    board_mapping = yaml.load(f, Loader=yaml.FullLoader)
+config_file = cwd.parent.joinpath("config.yaml")
+with open(config_file, "r") as f:
+    config = yaml.load(f, Loader=yaml.FullLoader)
 
 # get list of serials in channel order
 serials = []
-for i in range(len(board_mapping)):
-    # channel mapping file is 1-indexed
-    serials.append(board_mapping[i])
+for ch, serial in sorted(config["board_mapping"].items()):
+    serials.append(serial)
 
 # connect boards
 smu.connect(serials=serials)
