@@ -184,6 +184,10 @@ psu.set_output_enable(False, 1)
 # set overcurrent protection for ch 1
 psu.set_ocp_value(0.21, 1)
 psu.set_ocp_enable(True, 1)
+
+# set overvoltage protection for ch 1
+psu.set_ovp_value(11, 1)
+psu.set_ovp_enable(True, 1)
 print("PSU configuration complete!")
 
 
@@ -283,7 +287,7 @@ def measure_current_cal(smu, channel, save_file):
     smu.enable_output(True, channel)
 
     # set psu to source 0 A and enable output
-    max_voltage = 5.2
+    max_voltage = 11
     psu.set_apply(channel=1, voltage=max_voltage, current=0)
     psu.set_output_enable(True, 1)
 
