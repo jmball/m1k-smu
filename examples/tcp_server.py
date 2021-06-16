@@ -11,7 +11,7 @@ import sys
 
 import yaml
 
-sys.path.insert(1, str(pathlib.Path.cwd().parent.parent))
+sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
 
 # get primary ip address
@@ -92,6 +92,7 @@ def worker():
                 # pick latest one
                 fs.reverse()
                 cf = fs[0]
+                print(f"Loading calibration file: {cf}")
 
                 # load cal data
                 with open(cf, "r") as f:
@@ -120,6 +121,7 @@ def worker():
 
                 msg = buf.decode().strip(TERMCHAR)
                 msg_split = msg.split(" ")
+                print(f"Message received: {msg}")
 
                 # handle message
                 resp = ""
