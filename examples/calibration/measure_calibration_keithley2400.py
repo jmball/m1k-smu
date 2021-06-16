@@ -104,6 +104,9 @@ serials = []
 for ch, serial in sorted(config["board_mapping"].items()):
     serials.append(serial)
 
+# get i_threshold from config
+i_threshold = config["i_threshold"]
+
 # connect boards
 smu.connect(serials=serials)
 
@@ -119,19 +122,33 @@ for board in range(smu.num_boards):
     print(f"SMU board {board} ID: {smu.get_channel_id(2 * board)}")
 print("Connected!")
 
-# set measurement data using logarithmic spacing
-cal_voltages = np.logspace(-3, 0, 25) * 5
-cal_voltages = [f"{v:6.4f}" for v in cal_voltages]
+# minimum voltage and current settings
+min_voltage = 0.001
+min_current = 0.0001
 
-cal_currents_ = np.logspace(-4, -1, 25) * 2
-cal_currents_0 = [f"{i:6.4f}" for i in cal_currents_]
-cal_currents_1 = [f"{i:6.4f}" for i in -cal_currents_]
-# for current measurements Keithley and ADALM1000 see opposite polarities.
+# maximum voltage and current settings for smu
+max_voltage = 5
+max_current = i_threshold
+
+# number of calibration points
+points = 25
+
+# set measurement data using logarithmic spacing
+cal_voltages = np.logspace(np.log10(max_voltage), np.log10(max_voltage), points)
+cal_currents_ = np.logspace(np.log10(min_current), np.log10(max_current), points)
+
+# round to instrument precision
+# rounding floats to strings can lead to duplicate values but just want the unique set
+cal_voltages = set([f"{v:6.4f}" for v in cal_voltages])
+cal_currents_0 = set([f"{i:6.4f}" for i in cal_currents_])
+cal_currents_1 = set([f"{i:6.4f}" for i in -cal_currents_])
+
+# for current measurements psu and ADALM1000 see opposite polarities.
 # cal file has to list +ve current first so for ADALM1000 current measurements
-# keithley should start off sourcing -ve current after 0
-cal_currents_meas = cal_currents_1 + cal_currents_0
+# psu should start off sourcing -ve current after 0
+cal_currents_meas = list(cal_currents_1) + list(cal_currents_0)
 # for ADALM1000 sourcing do the opposite
-cal_currents_source = cal_currents_0 + cal_currents_1
+cal_currents_source = list(cal_currents_0) + list(cal_currents_1)
 
 # setup keithley
 print("\nConfiguring Keithley 2400...")
