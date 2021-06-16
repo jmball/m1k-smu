@@ -668,7 +668,7 @@ class smu:
             "auto_off": False,
             "four_wire": default_four_wire,
             "v_range": 5,
-            "source_mode": "v",
+            "dc_mode": "v",
             "sweep_mode": "v",
             "dc_values": [],
             "sweep_values": [],
@@ -759,7 +759,7 @@ class smu:
 
         # setup channel settings for a dc measurement
         for ch, ch_value in values.items():
-            self._channel_settings[ch]["source_mode"] = source_mode
+            self._channel_settings[ch]["dc_mode"] = source_mode
             self._channel_settings[ch]["dc_values"] = [ch_value]
 
         # if outputs are currently enabled, update their values
@@ -1119,7 +1119,7 @@ class smu:
                     if self._channel_settings[ch]["calibration_mode"] == "external":
                         A_cal = self._channel_settings[ch]["external_calibration"]["A"]
 
-                        source_mode = self._channel_settings[ch]["source_mode"]
+                        source_mode = self._channel_settings[ch]["dc_mode"]
                         if source_mode == "v":
                             f_int_mva = A_cal["source_v"]["meas"]
                             f_int_mia = A_cal["meas_i"]
@@ -1219,7 +1219,7 @@ class smu:
                             "external_calibration"
                         ]["A"]
 
-                        source_mode = self._channel_settings[2 * board]["source_mode"]
+                        source_mode = self._channel_settings[2 * board]["dc_mode"]
                         if source_mode == "v":
                             f_int_mva = A_cal["source_v"]["meas"]
                             f_int_mia = A_cal["meas_i"]
@@ -1235,9 +1235,7 @@ class smu:
                             "external_calibration"
                         ]["B"]
 
-                        source_mode = self._channel_settings[2 * board + 1][
-                            "source_mode"
-                        ]
+                        source_mode = self._channel_settings[2 * board + 1]["dc_mode"]
                         if source_mode == "v":
                             f_int_mvb = B_cal["source_v"]["meas"]
                             f_int_mib = B_cal["meas_i"]
@@ -1354,7 +1352,7 @@ class smu:
 
             if enable is True:
                 dc_values = self._channel_settings[ch]["dc_values"]
-                source_mode = self._channel_settings[ch]["source_mode"]
+                source_mode = self._channel_settings[ch]["dc_mode"]
 
                 # add offset is LO is 2.5 V
                 offset = 0
@@ -1378,7 +1376,7 @@ class smu:
 
                 # determine source mode
                 if source_mode is True:
-                    if self._channel_settings[ch]["source_mode"] == "v":
+                    if self._channel_settings[ch]["dc_mode"] == "v":
                         mode = pysmu.Mode.SVMI_SPLIT
                     else:
                         mode = pysmu.Mode.SIMV_SPLIT
