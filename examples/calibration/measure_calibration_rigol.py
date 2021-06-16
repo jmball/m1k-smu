@@ -172,7 +172,7 @@ max_current = i_threshold
 points = 25
 
 # set measurement data using logarithmic spacing
-cal_voltages = np.logspace(np.log10(max_voltage), np.log10(max_voltage), points)
+cal_voltages = np.logspace(np.log10(min_voltage), np.log10(max_voltage), points)
 cal_currents_ = np.logspace(np.log10(min_current), np.log10(max_current), points)
 
 # round to instrument precision
