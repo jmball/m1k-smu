@@ -9,6 +9,7 @@ import threading
 import warnings
 import sys
 
+import scipy.interpolate
 import yaml
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
@@ -76,8 +77,42 @@ if config is not None:
         )
 
 
+def stringify_nonnative_dict_values(d):
+    """Convert non-native types in a dictionary to a string representation.
+
+    Non-native types cannot be sent over TCP so require conversion.
+
+    Assumes anything contained in a list is a native type.
+
+    Parameters
+    ----------
+    d : dict
+        Dictionary.
+
+    Returns
+    -------
+    d : dict
+        Formatted dictionary.
+    """
+    for key, value in d.items():
+        if type(value) is dict:
+            d[key] = stringify_nonnative_dict_values(value)
+        elif type(value) not in [str, float, int, list, tuple, bool]:
+            d[key] = str(value)
+        else:
+            d[key] = value
+
+    return d
+
+
 def worker(smu):
-    """Handle messages."""
+    """Handle messages.
+
+    Parameters
+    ----------
+    smu : m1k.smu() object
+        SMU object.
+    """
     # load calibration data
     if cal_data_folder is not None:
         cal_data = {}
@@ -141,7 +176,7 @@ def worker(smu):
             elif msg == "sr":
                 resp = str(smu.sample_rate)
             elif msg == "set":
-                resp = str(smu.channel_settings)
+                resp = str(stringify_nonnative_dict_values(smu.channel_settings))
             elif msg_split[0] == "nplc":
                 if len(msg_split) == 1:
                     resp = str(smu.nplc)
