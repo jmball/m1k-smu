@@ -52,7 +52,7 @@ with m1k.smu() as smu:
     smu.settling_delay = 0.005
 
     # configure channel specific settings for all outputs
-    smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
+    smu.configure_channel_settings(four_wire=False, v_range=5)
 
     print("\nRunning steady-state Voc...")
 

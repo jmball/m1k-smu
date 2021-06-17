@@ -183,14 +183,6 @@ def worker():
                             smu.use_internal_calibration(ast.literal_eval(msg_split[2]))
                     else:
                         resp = "ERROR: invalid message."
-                elif msg_split[0] == "ao":
-                    if len(msg_split) == 3:
-                        smu.configure_channel_settings(
-                            channel=ast.literal_eval(msg_split[2]),
-                            auto_off=bool(int(msg_split[1])),
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
                 elif msg_split[0] == "fw":
                     if len(msg_split) == 3:
                         smu.configure_channel_settings(

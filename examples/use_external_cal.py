@@ -45,7 +45,7 @@ with m1k.smu(plf=50, ch_per_board=2) as smu:
     smu.settling_delay = 0.005
 
     # configure channel specific settings for all outputs
-    smu.configure_channel_settings(auto_off=False, four_wire=False, v_range=5)
+    smu.configure_channel_settings(four_wire=False, v_range=5)
 
     # configure a sweep
     smu.configure_sweep(start=0, stop=1, points=21, source_mode="v")
