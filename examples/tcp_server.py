@@ -262,10 +262,12 @@ def worker(smu):
                     resp = "ERROR: invalid message."
             elif msg_split[0] == "meas":
                 if len(msg_split) == 4:
-                    smu.measure(
-                        ast.literal_eval(msg_split[1]),
-                        msg_split[2],
-                        bool(int(msg_split[3])),
+                    resp = str(
+                        smu.measure(
+                            ast.literal_eval(msg_split[1]),
+                            msg_split[2],
+                            bool(int(msg_split[3])),
+                        )
                     )
                 else:
                     resp = "ERROR: invalid message."
