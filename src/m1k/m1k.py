@@ -1056,6 +1056,7 @@ class smu:
             if self.ch_per_board == 1:
                 for ch in channels:
                     dev_ix = self._channel_settings[ch]["dev_ix"]
+                    dev_channel = self._channel_settings[ch]["dev_channel"]
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[dev_ix]), self._samples_per_datum)
 
@@ -1092,23 +1093,27 @@ class smu:
 
                     # update measured values according to external calibration
                     if self._channel_settings[ch]["calibration_mode"] == "external":
-                        A_cal = self._channel_settings[ch]["external_calibration"]["A"]
+                        cal = self._channel_settings[ch]["external_calibration"]
+                        A_cal = cal["A"]
 
-                        source_mode = self._channel_settings[ch]["dc_mode"]
-                        if source_mode == "v":
+                        mode = self._session.devices[dev_ix].channels[dev_channel].mode
+
+                        if mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]:
                             f_int_mva = A_cal["source_v"]["meas"]
                             f_int_mia = A_cal["meas_i"]
-                        else:
+                        elif mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]:
                             f_int_mva = A_cal["meas_v"]
                             f_int_mia = A_cal["source_i"]["meas"]
+                        else:
+                            # HI_Z or HI_Z_SPLIT mode
+                            f_int_mva = A_cal["meas_v"]
+                            f_int_mia = A_cal["meas_i"]
 
                         A_voltages = f_int_mva(A_voltages)
                         currents = f_int_mia(currents).tolist()
 
                         if self._channel_settings[ch]["four_wire"] is True:
-                            B_cal = self._channel_settings[ch]["external_calibration"][
-                                "B"
-                            ]
+                            B_cal = cal["B"]
                             f_int_mvb = B_cal["meas_v"]
                             B_voltages = f_int_mvb(B_voltages)
                             voltages = A_voltages - B_voltages
@@ -1189,18 +1194,26 @@ class smu:
                     B_cal_mode = self._channel_settings[2 * board + 1][
                         "calibration_mode"
                     ]
+
+                    # get source mode to determine how to look up external cal
+                    mode = self._session.devices[dev_ix].channels[dev_channel].mode
+
+                    # apply external calibration if required
                     if (A_cal_mode == "external") and (2 * board in channels):
                         A_cal = self._channel_settings[2 * board][
                             "external_calibration"
                         ]["A"]
 
-                        source_mode = self._channel_settings[2 * board]["dc_mode"]
-                        if source_mode == "v":
+                        if mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]:
                             f_int_mva = A_cal["source_v"]["meas"]
                             f_int_mia = A_cal["meas_i"]
-                        else:
+                        elif mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]:
                             f_int_mva = A_cal["meas_v"]
                             f_int_mia = A_cal["source_i"]["meas"]
+                        else:
+                            # HI_Z or HI_Z_SPLIT mode
+                            f_int_mva = A_cal["meas_v"]
+                            f_int_mia = A_cal["meas_i"]
 
                         A_voltages = f_int_mva(A_voltages).tolist()
                         A_currents = f_int_mia(A_currents).tolist()
@@ -1210,13 +1223,16 @@ class smu:
                             "external_calibration"
                         ]["B"]
 
-                        source_mode = self._channel_settings[2 * board + 1]["dc_mode"]
-                        if source_mode == "v":
+                        if mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]:
                             f_int_mvb = B_cal["source_v"]["meas"]
                             f_int_mib = B_cal["meas_i"]
-                        else:
+                        elif mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]:
                             f_int_mvb = B_cal["meas_v"]
                             f_int_mib = B_cal["source_i"]["meas"]
+                        else:
+                            # HI_Z or HI_Z_SPLIT mode
+                            f_int_mvb = B_cal["meas_v"]
+                            f_int_mib = B_cal["meas_i"]
 
                         B_voltages = f_int_mvb(B_voltages).tolist()
                         B_currents = f_int_mib(B_currents).tolist()
@@ -1225,7 +1241,7 @@ class smu:
                     # board input power)
                     if 2 * board in channels:
                         if channel_overcurrents[2 * board] is True:
-                            A_statuses = [2 for i in currents]
+                            A_statuses = [2 for i in A_currents]
                         else:
                             A_statuses = [
                                 0 if abs(i) <= self.i_threshold else 1
@@ -1242,7 +1258,7 @@ class smu:
 
                     if 2 * board + 1 in channels:
                         if channel_overcurrents[2 * board + 1] is True:
-                            B_statuses = [2 for i in currents]
+                            B_statuses = [2 for i in B_currents]
                         else:
                             B_statuses = [
                                 0 if abs(i) <= self.i_threshold else 1
