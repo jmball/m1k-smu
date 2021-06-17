@@ -76,200 +76,200 @@ if config is not None:
         )
 
 
-def worker():
+def worker(smu):
     """Handle messages."""
-    # start smu in context manager to handle clean disconnect on errors
-    with m1k.smu(**init_args) as smu:
-        smu.connect(serials)
+    # load calibration data
+    if cal_data_folder is not None:
+        cal_data = {}
+        for board, serial in enumerate(smu.serials):
+            # get list of cal files for given serial
+            fs = [f for f in cal_data_folder.glob(f"cal_*_{serial}.yaml")]
 
-        # load calibration data
-        if cal_data_folder is not None:
-            cal_data = {}
-            for board, serial in enumerate(smu.serials):
-                # get list of cal files for given serial
-                fs = [f for f in cal_data_folder.glob(f"cal_*_{serial}.yaml")]
+            # pick latest one
+            fs.reverse()
+            cf = fs[0]
+            print(f"Loading calibration file: {cf}")
 
-                # pick latest one
-                fs.reverse()
-                cf = fs[0]
-                print(f"Loading calibration file: {cf}")
+            # load cal data
+            with open(cf, "r") as f:
+                data = yaml.load(f, Loader=yaml.SafeLoader)
 
-                # load cal data
-                with open(cf, "r") as f:
-                    data = yaml.load(f, Loader=yaml.SafeLoader)
+            # add data to cal dict
+            if smu.ch_per_board == 1:
+                cal_data[board] = data
+            elif smu.ch_per_board == 2:
+                cal_data[2 * board] = data
+                cal_data[2 * board + 1] = data
+    else:
+        cal_data = {}
 
-                # add data to cal dict
-                if smu.ch_per_board == 1:
-                    cal_data[board] = data
-                elif smu.ch_per_board == 2:
-                    cal_data[2 * board] = data
-                    cal_data[2 * board + 1] = data
-        else:
-            cal_data = {}
+    # run infinite loop to handle messages
+    while True:
+        conn, addr = q.get()
 
-        # run infinite loop to handle messages
-        while True:
-            conn, addr = q.get()
+        with conn:
+            # read incoming message
+            buf = b""
+            while True:
+                buf += conn.recv(1)
+                if buf.endswith(TERMCHAR_BYTES):
+                    break
 
-            with conn:
-                # read incoming message
-                buf = b""
-                while True:
-                    buf += conn.recv(1)
-                    if buf.endswith(TERMCHAR_BYTES):
-                        break
+            msg = buf.decode().strip(TERMCHAR)
+            msg_split = msg.split(" ")
+            print(f"Message received: {msg}")
 
-                msg = buf.decode().strip(TERMCHAR)
-                msg_split = msg.split(" ")
-                print(f"Message received: {msg}")
-
-                # handle message
-                resp = ""
-                if msg_split[0] == "plf":
-                    if len(msg_split) == 1:
-                        resp = str(smu.plf)
-                    elif len(msg_split) == 2:
-                        smu.plf = float(msg_split[1])
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg == "cpb":
-                    resp = str(smu.ch_per_board)
-                elif msg == "rst":
-                    smu.reset()
-                elif msg == "buf":
-                    resp = str(smu.maximum_buffer_size)
-                elif msg == "chs":
-                    resp = str(smu.num_channels)
-                elif msg == "bds":
-                    resp = str(smu.num_boards)
-                elif msg == "sr":
-                    resp = str(smu.sample_rate)
-                elif msg == "set":
-                    resp = str(smu.channel_settings)
-                elif msg_split[0] == "nplc":
-                    if len(msg_split) == 1:
-                        resp = str(smu.nplc)
-                    elif len(msg_split) == 2:
-                        smu.nplc = float(msg_split[1])
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "sd":
-                    if len(msg_split) == 1:
-                        resp = str(smu.settling_delay)
-                    elif len(msg_split) == 2:
-                        smu.settling_delay = float(msg_split[1])
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "idn":
-                    if len(msg_split) == 1:
-                        resp = idn
-                    elif len(msg_split) == 2:
-                        resp = smu.get_channel_id(int(msg_split[1]))
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "cal":
-                    if len(msg_split) == 3:
-                        if msg_split[1] == "ext":
-                            if cal_data == {}:
-                                resp = "ERROR: external calibration data not available."
-                            elif ast.literal_eval(msg_split[2]) is None:
-                                for ch, data in cal_data.items():
-                                    smu.use_external_calibration(ch, data)
-                            else:
-                                smu.use_external_calibration(
-                                    int(msg_split[2]), cal_data[int(msg_split[2])]
-                                )
-                        elif msg_split[1] == "int":
-                            smu.use_internal_calibration(ast.literal_eval(msg_split[2]))
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "fw":
-                    if len(msg_split) == 3:
-                        smu.configure_channel_settings(
-                            channel=ast.literal_eval(msg_split[2]),
-                            four_wire=bool(int(msg_split[1])),
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "vr":
-                    if len(msg_split) == 3:
-                        smu.configure_channel_settings(
-                            channel=ast.literal_eval(msg_split[2]),
-                            v_range=float(msg_split[1]),
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "def":
-                    if len(msg_split) == 3:
-                        smu.configure_channel_settings(
-                            channel=ast.literal_eval(msg_split[2]),
-                            default=bool(int(msg_split[1])),
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "swe":
-                    if len(msg_split) == 5:
-                        smu.configure_sweep(
-                            float(msg_split[1]),
-                            float(msg_split[2]),
-                            int(msg_split[3]),
-                            msg_split[4],
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "lst":
-                    if len(msg_split) == 3:
-                        smu.configure_list_sweep(
-                            ast.literal_eval(msg_split[1]),
-                            msg_split[2],
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "dc":
-                    if len(msg_split) == 3:
-                        smu.configure_dc(ast.literal_eval(msg_split[1]), msg_split[2])
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "meas":
-                    if len(msg_split) == 4:
-                        smu.measure(
-                            ast.literal_eval(msg_split[1]),
-                            msg_split[2],
-                            bool(int(msg_split[3])),
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "eo":
-                    if len(msg_split) == 3:
-                        smu.enable_output(
-                            bool(int(msg_split[1])), ast.literal_eval(msg_split[2])
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
-                elif msg_split[0] == "led":
-                    if len(msg_split) == 5:
-                        smu.set_leds(
-                            bool(int(msg_split[1])),
-                            bool(int(msg_split[2])),
-                            bool(int(msg_split[3])),
-                            ast.literal_eval(msg_split[4]),
-                        )
-                    else:
-                        resp = "ERROR: invalid message."
+            # handle message
+            resp = ""
+            if msg_split[0] == "plf":
+                if len(msg_split) == 1:
+                    resp = str(smu.plf)
+                elif len(msg_split) == 2:
+                    smu.plf = float(msg_split[1])
                 else:
                     resp = "ERROR: invalid message."
+            elif msg == "cpb":
+                resp = str(smu.ch_per_board)
+            elif msg == "rst":
+                smu.reset()
+            elif msg == "buf":
+                resp = str(smu.maximum_buffer_size)
+            elif msg == "chs":
+                resp = str(smu.num_channels)
+            elif msg == "bds":
+                resp = str(smu.num_boards)
+            elif msg == "sr":
+                resp = str(smu.sample_rate)
+            elif msg == "set":
+                resp = str(smu.channel_settings)
+            elif msg_split[0] == "nplc":
+                if len(msg_split) == 1:
+                    resp = str(smu.nplc)
+                elif len(msg_split) == 2:
+                    smu.nplc = float(msg_split[1])
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "sd":
+                if len(msg_split) == 1:
+                    resp = str(smu.settling_delay)
+                elif len(msg_split) == 2:
+                    smu.settling_delay = float(msg_split[1])
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "idn":
+                if len(msg_split) == 1:
+                    resp = idn
+                elif len(msg_split) == 2:
+                    resp = smu.get_channel_id(int(msg_split[1]))
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "cal":
+                if len(msg_split) == 3:
+                    if msg_split[1] == "ext":
+                        if cal_data == {}:
+                            resp = "ERROR: external calibration data not available."
+                        elif ast.literal_eval(msg_split[2]) is None:
+                            for ch, data in cal_data.items():
+                                smu.use_external_calibration(ch, data)
+                        else:
+                            smu.use_external_calibration(
+                                int(msg_split[2]), cal_data[int(msg_split[2])]
+                            )
+                    elif msg_split[1] == "int":
+                        smu.use_internal_calibration(ast.literal_eval(msg_split[2]))
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "fw":
+                if len(msg_split) == 3:
+                    smu.configure_channel_settings(
+                        channel=ast.literal_eval(msg_split[2]),
+                        four_wire=bool(int(msg_split[1])),
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "vr":
+                if len(msg_split) == 3:
+                    smu.configure_channel_settings(
+                        channel=ast.literal_eval(msg_split[2]),
+                        v_range=float(msg_split[1]),
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "def":
+                if len(msg_split) == 3:
+                    smu.configure_channel_settings(
+                        channel=ast.literal_eval(msg_split[2]),
+                        default=bool(int(msg_split[1])),
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "swe":
+                if len(msg_split) == 5:
+                    smu.configure_sweep(
+                        float(msg_split[1]),
+                        float(msg_split[2]),
+                        int(msg_split[3]),
+                        msg_split[4],
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "lst":
+                if len(msg_split) == 3:
+                    smu.configure_list_sweep(
+                        ast.literal_eval(msg_split[1]),
+                        msg_split[2],
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "dc":
+                if len(msg_split) == 3:
+                    smu.configure_dc(ast.literal_eval(msg_split[1]), msg_split[2])
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "meas":
+                if len(msg_split) == 4:
+                    smu.measure(
+                        ast.literal_eval(msg_split[1]),
+                        msg_split[2],
+                        bool(int(msg_split[3])),
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "eo":
+                if len(msg_split) == 3:
+                    smu.enable_output(
+                        bool(int(msg_split[1])), ast.literal_eval(msg_split[2])
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            elif msg_split[0] == "led":
+                if len(msg_split) == 5:
+                    smu.set_leds(
+                        bool(int(msg_split[1])),
+                        bool(int(msg_split[2])),
+                        bool(int(msg_split[3])),
+                        ast.literal_eval(msg_split[4]),
+                    )
+                else:
+                    resp = "ERROR: invalid message."
+            else:
+                resp = "ERROR: invalid message."
 
-                # send response
-                conn.sendall(resp.encode() + TERMCHAR_BYTES)
+            # send response
+            conn.sendall(resp.encode() + TERMCHAR_BYTES)
 
-            q.task_done()
+        q.task_done()
 
+
+# init smu
+smu = m1k.smu(**init_args)
+smu.connect(serials)
 
 # initialise a queue to hold incoming connections
 q = queue.Queue()
 
 # start worker thread to handle requests
-threading.Thread(target=worker, daemon=True).start()
+threading.Thread(target=worker, args=(smu,), daemon=True).start()
 
 # start server
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
