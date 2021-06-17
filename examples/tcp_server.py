@@ -283,10 +283,10 @@ def worker(smu):
             elif msg_split[0] == "led":
                 if len(msg_split) == 5:
                     smu.set_leds(
+                        ast.literal_eval(msg_split[4]),
                         bool(int(msg_split[1])),
                         bool(int(msg_split[2])),
                         bool(int(msg_split[3])),
-                        ast.literal_eval(msg_split[4]),
                     )
                 else:
                     resp = "ERROR: invalid message."
