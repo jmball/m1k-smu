@@ -9,7 +9,6 @@ import threading
 import warnings
 import sys
 
-import scipy.interpolate
 import yaml
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
