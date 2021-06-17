@@ -190,6 +190,8 @@ def worker(smu):
                     smu.settling_delay = float(msg_split[1])
                 else:
                     resp = "ERROR: invalid message."
+            elif msg == "eos":
+                resp = str(smu.enabled_outputs)
             elif msg_split[0] == "idn":
                 if len(msg_split) == 1:
                     resp = idn
