@@ -225,7 +225,7 @@ def measure_voltage_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, measure V\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_meas_v = []
+        cal_ch_meas_v = {"smu": [], "dmm": []}
         for v in cal_voltages:
             keithley2400.write(f":SOUR:VOLT {v}")
             time.sleep(0.1)
@@ -235,7 +235,9 @@ def measure_voltage_cal(smu, channel, save_file):
             smu_v = smu.measure(channel, measurement="dc")[channel][0][0]
 
             f.write(f"<{keithley_v:6.4f}, {smu_v:7.5f}>\n")
-            cal_ch_meas_v.append([keithley_v, smu_v])
+
+            cal_ch_meas_v["smu"].extend([smu_v])
+            cal_ch_meas_v["dmm"].extend([keithley_v])
             print(f"Keithley: {keithley_v:6.4f}, SMU: {smu_v:7.5f}")
 
         f.write("<\>\n\n")
@@ -292,7 +294,7 @@ def measure_current_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, measure I\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_meas_i = []
+        cal_ch_meas_i = {"smu": [], "dmm": []}
         for i in cal_currents_meas:
             keithley2400.write(f":SOUR:CURR {i}")
             time.sleep(0.1)
@@ -303,7 +305,9 @@ def measure_current_cal(smu, channel, save_file):
             smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{keithley_i:6.4f}, {smu_i:7.5f}>\n")
-            cal_ch_meas_i.append([keithley_i, smu_i])
+
+            cal_ch_meas_i["smu"].extend([smu_i])
+            cal_ch_meas_i["dmm"].extend([keithley_i])
             print(f"Keithley: {keithley_i:6.4f}, SMU: {smu_i:7.5f}")
 
         f.write("<\>\n\n")
@@ -361,7 +365,7 @@ def source_voltage_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, source V\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_sour_v = []
+        cal_ch_sour_v = {"set": [], "smu": [], "dmm": []}
         for v in cal_voltages:
             smu.configure_dc({channel: float(v)}, source_mode="v")
             time.sleep(0.1)
@@ -372,7 +376,10 @@ def source_voltage_cal(smu, channel, save_file):
             smu_v = smu.measure(channel, measurement="dc")[channel][0][0]
 
             f.write(f"<{smu_v:7.5f}, {keithley_v:6.4f}>\n")
-            cal_ch_sour_v.append([v, smu_v, keithley_v])
+
+            cal_ch_sour_v["set"].extend([v])
+            cal_ch_sour_v["smu"].extend([smu_v])
+            cal_ch_sour_v["dmm"].extend([keithley_v])
             print(f"SMU: {smu_v:7.5f}, Keithley: {keithley_v:6.4f}")
 
         f.write("<\>\n\n")
@@ -432,7 +439,7 @@ def source_current_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, source I\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_sour_i = []
+        cal_ch_sour_i = {"set": [], "smu": [], "dmm": []}
         for i in cal_currents_source:
             smu.configure_dc({channel: float(i)}, source_mode="i")
             time.sleep(0.1)
@@ -444,7 +451,10 @@ def source_current_cal(smu, channel, save_file):
             smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{smu_i:7.5f}, {keithley_i:6.4f}>\n")
-            cal_ch_sour_i.append([i, smu_i, keithley_i])
+
+            cal_ch_sour_i["set"].extend([i])
+            cal_ch_sour_i["smu"].extend([smu_i])
+            cal_ch_sour_i["dmm"].extend([keithley_i])
             print(f"set: {i}, SMU: {smu_i:6.4f}, Keithley: {keithley_i:7.5f}")
 
         f.write("<\>\n\n")

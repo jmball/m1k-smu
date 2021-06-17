@@ -501,23 +501,21 @@ class smu:
 
             {
                 "A": {
-                    "meas_v": [data],
-                    "meas_i": [data],
-                    "source_v": [data],
-                    "source_i": [data]
+                    "meas_v": {"smu": [data], "dmm": [data]},
+                    "meas_i": {"smu": [data], "dmm": [data]},
+                    "source_v": {"set": [data], "smu": [data], "dmm": [data]},
+                    "source_i": {"set": [data], "smu": [data], "dmm": [data]}
                 },
                 "B": {
-                    "meas_v": [data],
-                    "meas_i": [data],
-                    "source_v": [data],
-                    "source_i": [data]
+                    "meas_v": {"smu": [data], "dmm": [data]},
+                    "meas_i": {"smu": [data], "dmm": [data]},
+                    "source_v": {"set": [data], "smu": [data], "dmm": [data]},
+                    "source_i": {"set": [data], "smu": [data], "dmm": [data]}
                 }
             }
 
             where the keys "A" and "B" refer to device channels and [data] values are
-            lists of lists of measurement data. For "meas_[x]" keys the format of
-            the sub-lists is [dmm_meas, m1k_meas], for "source_[x]" keys the format of
-            the sub-lists is [set, m1k_meas, dmm_meas].
+            lists of measurement data.
 
             If `None`, use calibration data already provided.
         """
@@ -537,34 +535,29 @@ class smu:
             external_cal[sub_ch] = {}
             for meas, data in data_dict.items():
                 if (meas.startswith("meas") is True) and (data is not None):
-                    x = [row[1] for row in data]
-                    y = [row[0] for row in data]
                     # linearly interpolate data with linear extrapolation for data
                     # outside measured range
                     f_int = scipy.interpolate.interp1d(
-                        x,
-                        y,
+                        data["smu"],
+                        data["dmm"],
                         kind="linear",
                         bounds_error=False,
                         fill_value="extrapolate",
                     )
                     external_cal[sub_ch][meas] = f_int
                 elif (meas.startswith("source") is True) and (data is not None):
-                    x = [row[1] for row in data]
-                    y = [row[2] for row in data]
-                    z = [row[0] for row in data]
                     # interpolation for returned values from device
                     f_int_meas = scipy.interpolate.interp1d(
-                        x,
-                        y,
+                        data["smu"],
+                        data["dmm"],
                         kind="linear",
                         bounds_error=False,
                         fill_value="extrapolate",
                     )
                     # interpolation for setting the device output
                     f_int_set = scipy.interpolate.interp1d(
-                        y,
-                        z,
+                        data["dmm"],
+                        data["set"],
                         kind="linear",
                         bounds_error=False,
                         fill_value="extrapolate",
@@ -602,7 +595,6 @@ class smu:
     def configure_channel_settings(
         self,
         channel=None,
-        auto_off=None,
         four_wire=None,
         v_range=None,
         default=False,
@@ -613,8 +605,6 @@ class smu:
         ----------
         channel : int
             Channel number (0-indexed). If `None`, apply settings to all channels.
-        auto_off : bool
-            Automatically set output to high impedance mode after a measurement.
         four_wire : bool
             Four wire enabled.
         v_range : {2.5, 5}
@@ -633,9 +623,6 @@ class smu:
                 self._configure_channel_default_settings(ch)
                 self.enable_output(False, ch)
             else:
-                if auto_off is not None:
-                    self._channel_settings[ch]["auto_off"] = auto_off
-
                 if four_wire is not None:
                     self._channel_settings[ch]["four_wire"] = four_wire
 
@@ -665,7 +652,6 @@ class smu:
             "serial": None,
             "dev_ix": None,
             "dev_channel": None,
-            "auto_off": False,
             "four_wire": default_four_wire,
             "v_range": 5,
             "dc_mode": "v",
@@ -1019,22 +1005,11 @@ class smu:
                     requested_mode = self._channel_settings[ch]["sweep_mode"]
                     self.configure_dc({ch: values[-1]}, requested_mode)
 
-            if self._libsmu_mod is True:
-                # enabled channels will still be on
-                if self._channel_settings[ch]["auto_off"] is True:
-                    self.enable_output(False, ch)
-            else:
-                if self._channel_settings[ch]["auto_off"] is False:
-                    if start_modes[ch] not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
-                        self.enable_output(True, ch)
-                    else:
-                        # although output turns off after measurement run, it doesn't
-                        # re-set the channel mode in the backend to HI_Z so force it
-                        # manually here
-                        self.enable_output(False, ch)
-                else:
-                    # explicity turn off output leds and re-set mode
-                    self.enable_output(False, ch)
+            # original libsmu turns off output after run so turn it back on again if it
+            # was on before measurement started
+            if self._libsmu_mod is False:
+                if start_modes[ch] not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                    self.enable_output(True, ch)
 
         return raw_data, overcurrents, t0
 

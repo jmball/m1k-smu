@@ -161,7 +161,7 @@ for board in range(smu.num_boards):
 print("Connected!")
 
 # minimum voltage and current settings on psu
-min_voltage = 0.001
+min_voltage = 0.005
 min_current = 0.0001
 
 # maximum voltage and current settings for smu
@@ -177,16 +177,16 @@ cal_currents_ = np.logspace(np.log10(min_current), np.log10(max_current), points
 
 # round to instrument precision
 # rounding floats to strings can lead to duplicate values but just want the unique set
-cal_voltages = set([f"{v:6.4f}" for v in cal_voltages])
-cal_currents_0 = set([f"{i:6.4f}" for i in cal_currents_])
-cal_currents_1 = set([f"{i:6.4f}" for i in -cal_currents_])
+cal_voltages = sorted(list(set([f"{v:6.4f}" for v in cal_voltages])))
+cal_currents_0 = sorted(list(set([f"{i:6.4f}" for i in cal_currents_])))
+cal_currents_1 = sorted(list(set([f"{i:6.4f}" for i in -cal_currents_])))
 
 # for current measurements psu and ADALM1000 see opposite polarities.
 # cal file has to list +ve current first so for ADALM1000 current measurements
 # psu should start off sourcing -ve current after 0
-cal_currents_meas = list(cal_currents_1) + list(cal_currents_0)
+cal_currents_meas = cal_currents_1 + cal_currents_0
 # for ADALM1000 sourcing do the opposite
-cal_currents_source = list(cal_currents_0) + list(cal_currents_1)
+cal_currents_source = cal_currents_0 + cal_currents_1
 
 # setup multimeter
 print("\nConfiguring DMM...")
@@ -250,7 +250,7 @@ def measure_voltage_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, measure V\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_meas_v = []
+        cal_ch_meas_v = {"smu": [], "dmm": []}
         for v in cal_voltages:
             psu.set_apply(channel=1, voltage=float(v), current=max_current)
             time.sleep(args.delay)
@@ -263,7 +263,8 @@ def measure_voltage_cal(smu, channel, save_file):
 
             f.write(f"<{dmm_v:6.4f}, {smu_v:7.5f}>\n")
 
-            cal_ch_meas_v.append([dmm_v, smu_v])
+            cal_ch_meas_v["smu"].extend([smu_v])
+            cal_ch_meas_v["dmm"].extend([dmm_v])
             print(f"set: {v}, DMM: {dmm_v:7.5f}, SMU: {smu_v:7.5f}")
 
         f.write("<\>\n\n")
@@ -318,7 +319,7 @@ def measure_current_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, measure I\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_meas_i = []
+        cal_ch_meas_i = {"smu": [], "dmm": []}
         for i in cal_currents_0:
             psu.set_apply(channel=1, voltage=max_voltage, current=float(i))
             time.sleep(args.delay)
@@ -332,7 +333,8 @@ def measure_current_cal(smu, channel, save_file):
 
             f.write(f"<{dmm_i:6.4f}, {smu_i:7.5f}>\n")
 
-            cal_ch_meas_i.append([dmm_i, smu_i])
+            cal_ch_meas_i["smu"].extend([smu_i])
+            cal_ch_meas_i["dmm"].extend([dmm_i])
             print(f"set: {i}, DMM: {dmm_i:7.5f}, SMU: {smu_i:7.5f}")
 
         psu.set_apply(channel=1, voltage=max_voltage, current=0)
@@ -353,7 +355,8 @@ def measure_current_cal(smu, channel, save_file):
 
             f.write(f"<{dmm_i:6.4f}, {smu_i:7.5f}>\n")
 
-            cal_ch_meas_i.append([dmm_i, smu_i])
+            cal_ch_meas_i["smu"].extend([smu_i])
+            cal_ch_meas_i["dmm"].extend([dmm_i])
             print(f"set: {i}, DMM: {dmm_i:7.5f}, SMU: {smu_i:7.5f}")
 
         f.write("<\>\n\n")
@@ -405,7 +408,7 @@ def source_voltage_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, source V\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_sour_v = []
+        cal_ch_sour_v = {"set": [], "smu": [], "dmm": []}
         for v in cal_voltages:
             smu.configure_dc({channel: float(v)}, source_mode="v")
             time.sleep(args.delay)
@@ -417,7 +420,10 @@ def source_voltage_cal(smu, channel, save_file):
             smu_v = smu.measure(channel, measurement="dc")[channel][0][0]
 
             f.write(f"<{smu_v:7.5f}, {dmm_v:6.4f}>\n")
-            cal_ch_sour_v.append([v, smu_v, dmm_v])
+
+            cal_ch_sour_v["set"].extend([v])
+            cal_ch_sour_v["smu"].extend([smu_v])
+            cal_ch_sour_v["dmm"].extend([dmm_v])
             print(f"set: {v}, SMU: {smu_v:7.5f}, DMM: {dmm_v:7.5f}")
 
         f.write("<\>\n\n")
@@ -466,7 +472,7 @@ def source_current_cal(smu, channel, save_file):
         f.write(f"# Channel {channel}, source I\n")
         f.write("</>\n")
         # run through the list of voltages
-        cal_ch_sour_i = []
+        cal_ch_sour_i = {"set": [], "smu": [], "dmm": []}
         for i in cal_currents_source:
             smu.configure_dc({channel: float(i)}, source_mode="i")
             time.sleep(args.delay)
@@ -479,7 +485,10 @@ def source_current_cal(smu, channel, save_file):
             smu_i = smu.measure(channel, measurement="dc")[channel][0][1]
 
             f.write(f"<{smu_i:7.5f}, {dmm_i:6.4f}>\n")
-            cal_ch_sour_i.append([i, smu_i, dmm_i])
+
+            cal_ch_sour_i["set"].extend([i])
+            cal_ch_sour_i["smu"].extend([smu_i])
+            cal_ch_sour_i["dmm"].extend([dmm_i])
             print(f"set: {i}, SMU: {smu_i:7.5f}, DMM: {dmm_i:7.5f}")
 
         f.write("<\>\n\n")
