@@ -377,7 +377,7 @@ def source_voltage_cal(smu, channel, save_file):
 
             f.write(f"<{smu_v:7.5f}, {keithley_v:6.4f}>\n")
 
-            cal_ch_sour_v["set"].extend([v])
+            cal_ch_sour_v["set"].extend([float(v)])
             cal_ch_sour_v["smu"].extend([smu_v])
             cal_ch_sour_v["dmm"].extend([keithley_v])
             print(f"SMU: {smu_v:7.5f}, Keithley: {keithley_v:6.4f}")
@@ -452,7 +452,7 @@ def source_current_cal(smu, channel, save_file):
 
             f.write(f"<{smu_i:7.5f}, {keithley_i:6.4f}>\n")
 
-            cal_ch_sour_i["set"].extend([i])
+            cal_ch_sour_i["set"].extend([float(i)])
             cal_ch_sour_i["smu"].extend([smu_i])
             cal_ch_sour_i["dmm"].extend([keithley_i])
             print(f"set: {i}, SMU: {smu_i:6.4f}, Keithley: {keithley_i:7.5f}")

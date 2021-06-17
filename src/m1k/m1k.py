@@ -555,12 +555,18 @@ class smu:
                         fill_value="extrapolate",
                     )
                     # interpolation for setting the device output
+                    if meas.endswith("v") is True:
+                        # some voltages are unreachable by extrapolation so fix values
+                        # to full device range of 0-5 V range
+                        fill_value = (0, 5)
+                    else:
+                        fill_value = "extrapolate"
                     f_int_set = scipy.interpolate.interp1d(
                         data["dmm"],
                         data["set"],
                         kind="linear",
                         bounds_error=False,
-                        fill_value="extrapolate",
+                        fill_value=fill_value,
                     )
                     external_cal[sub_ch][meas] = {}
                     external_cal[sub_ch][meas]["meas"] = f_int_meas
@@ -1151,6 +1157,7 @@ class smu:
                 boards = set([int(ch / 2) for ch in channels])
                 for board in boards:
                     dev_ix = self._channel_settings[2 * board]["dev_ix"]
+                    dev_channel = self._channel_settings[2 * board]["dev_channel"]
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[dev_ix]), self._samples_per_datum)
 
