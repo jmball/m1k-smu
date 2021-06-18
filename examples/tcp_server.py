@@ -29,6 +29,7 @@ TERMCHAR_BYTES = TERMCHAR.encode()
 # load config file
 try:
     config_path = pathlib.Path(os.environ["SMU_CONFIG_PATH"])
+    print(f"Config path: {config_path}")
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.SafeLoader)
 except KeyError:
@@ -74,6 +75,10 @@ if config is not None:
         warnings.warn(
             "Channels per board setting not found. Using default channels per board."
         )
+else:
+    serials = None
+
+print(f"Serials: {serials}")
 
 
 def stringify_nonnative_dict_values(d):
