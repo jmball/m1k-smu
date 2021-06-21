@@ -78,8 +78,9 @@ class smu:
         # private attribute to hold pysmu session
         self._session = None
 
-        # private attribute to hold device serials
+        # private attribute to hold device serials and channel mapping
         self._serials = None
+        self._channel_mapping = None
 
         # private attribute stating maximum buffer size of an ADALM1000
         self._maximum_buffer_size = 100000
@@ -254,7 +255,7 @@ class smu:
 
         return enabled_outputs
 
-    def connect(self, serials=None, sample_rate=100000):
+    def connect(self, channel_mapping=None, sample_rate=100000):
         """Connect one or more devices (channels) to the session (SMU).
 
         WARNING: this method cannot be called again if a session already exists. To
@@ -262,13 +263,13 @@ class smu:
 
         Parameters
         ----------
-        serials : str, list, or None
-            List of device serial numbers to add to the session. The order of the
-            serials in the list determines their channel number. The list index will be
-            the channel index if `ch_per_board` is 1. Otherwise two channel indices
-            will be added per list index, given as `2 * list index` and
-            `2 * list index + 1`. If `None`, connect all available devices, assigning
-            channel indices in the order determined by pysmu.
+        channel_mapping : dict
+            Dictionary of the form:
+                `{channel: {"serial": serial, "sub_channel": sub_channel}}`
+            where the `channel` keys are SMU channel numbers, `serial` is the board
+            serial number for the corresponding channel, and `sub_channel` is the board
+            sub-channel ('A' or 'B'). If `None`, connect all available devices,
+            assigning channel indices in the order determined by pysmu.
         sample_rate : int
             ADC sample rate in Hz.
         """
@@ -284,17 +285,50 @@ class smu:
         else:
             raise RuntimeError("Cannot connect more devices to the existing session.")
 
-        if serials is None:
+        if channel_mapping is None:
             serials = [dev.serial for dev in self._session.available_devices]
-        elif type(serials) is str:
-            serials = [serials]
-        elif type(serials) is not list:
+
+            # build channel map
+            channel_mapping = {}
+            for ix, serial in enumerate(serials):
+                if self.ch_per_board == 1:
+                    channel_mapping[ix] = {"serial": serial, "sub_channel": "A"}
+                else:
+                    channel_mapping[2 * ix] = {"serial": serial, "sub_channel": "A"}
+                    channel_mapping[2 * ix + 1] = {"serial": serial, "sub_channel": "B"}
+        elif type(channel_mapping) is not dict:
             raise ValueError(
-                f"Invalid type for serials: {type(serials)}. Must be `str`, `list`, or "
-                + "`None`."
+                f"Invalid type for channel_mapping: {type(channel_mapping)}. Must be"
+                + " `str`, `list`, or `None`."
             )
+        else:
+            # get list of unique serials and mapping info from channel mapping
+            serials = []
+            _all_info = []
+            for channel, info in sorted(channel_mapping.items()):
+                # append serial to list of serials if not already added
+                serial = info["serial"]
+                if serial not in serials:
+                    serials.append(serial)
+
+                # verify sub channel string is valid
+                if info["sub_channel"] not in ["A", "B"]:
+                    raise ValueError(
+                        f"Invalid sub-channel name in channel mapping for channel "
+                        + f"{channel}: {info['sub_channel']}. Must be 'A' or 'B'."
+                    )
+                else:
+                    _all_info.append(info)
+
+            # check there are no duplicates in channel mapping info
+            if len(set(_all_info)) != len(_all_info):
+                raise ValueError(
+                    "Duplicate channel info found in channel mapping. Check all "
+                    + "channels are uniquely defined and try again."
+                )
 
         # connect boards 1 by 1
+        self._channel_mapping = channel_mapping
         self._serials = serials
         for serial in serials:
             self._connect_board(serial)
@@ -358,18 +392,23 @@ class smu:
         # turn off outputs
         for ch in range(self.num_channels):
             dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
             # disable output (should already be disabled but just to make sure)
             self.enable_output(False, ch)
 
             if self.ch_per_board == 1:
-                # if 1 channel per board, channel B is only used for voltage
+                # if 1 channel per board, other sub_channel is only used for voltage
                 # measurement in four wire mode
                 # allow retries
+                if dev_channel == "A":
+                    other_channel = "B"
+                else:
+                    other_channel = "A"
                 err = None
                 for attempt in range(1, self._retries + 1):
                     try:
                         self._session.devices[dev_ix].channels[
-                            "B"
+                            other_channel
                         ].mode = pysmu.Mode.HI_Z_SPLIT
                         break
                     except pysmu.DeviceError as e:
@@ -400,17 +439,9 @@ class smu:
 
     def _map_boards(self):
         """Map boards to channels in channel settings."""
-        # make a list of serials corresponding to every SMU channel, i.e. if using
-        # 2 channels per board, 2 channels will share the same serial
-        ch_serials = []
-        for serial in self._serials:
-            if self.ch_per_board == 1:
-                ch_serials += [serial]
-            elif self.ch_per_board == 2:
-                ch_serials += [serial, serial]
-
         # find device index for each channel and init channel settings
-        for ch, serial in enumerate(ch_serials):
+        for ch, info in sorted(self._channel_mapping.items()):
+            serial = info["serial"]
             dev_ix = None
             for ix, dev in enumerate(self._session.devices):
                 if dev.serial == serial:
@@ -422,13 +453,7 @@ class smu:
             self._channel_settings[ch]["serial"] = serial
 
             # store individual device channel
-            if self.ch_per_board == 1:
-                self.channel_settings[ch]["dev_channel"] = "A"
-            elif self.ch_per_board == 2:
-                if ch % 2 == 0:
-                    self.channel_settings[ch]["dev_channel"] = "A"
-                else:
-                    self.channel_settings[ch]["dev_channel"] = "B"
+            self.channel_settings[ch]["dev_channel"] = info["sub_channel"]
 
     def _reconnect(self):
         """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
