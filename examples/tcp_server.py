@@ -14,7 +14,7 @@ import yaml
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
 
-HOST = '0.0.0.0'  # server listens on all interfaces
+HOST = "0.0.0.0"  # server listens on all interfaces
 PORT = 20101
 TERMCHAR = "\n"
 TERMCHAR_BYTES = TERMCHAR.encode()
@@ -41,10 +41,12 @@ except FileNotFoundError:
 init_args = {}
 if config is not None:
     try:
-        serials = [v for k, v in sorted(config["board_mapping"].items())]
+        channel_mapping = config["channel_mapping"]
+        for channel, info in channel_mapping.items():
+            channel_mapping[channel]["serial"] = config["board_mapping"][info["board"]]
     except KeyError:
-        serials = None
-        warnings.warn("Board mapping not found. Using pysmu default mapping.")
+        channel_mapping = None
+        warnings.warn("Channel mapping not found. Using pysmu default mapping.")
 
     try:
         cal_data_folder = pathlib.Path(config["cal_data_folder"])
@@ -300,7 +302,7 @@ def worker(smu):
 
 # init smu
 smu = m1k.smu(**init_args)
-smu.connect(serials)
+smu.connect(channel_mapping)
 
 # initialise a queue to hold incoming connections
 q = queue.Queue()
