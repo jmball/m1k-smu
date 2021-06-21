@@ -242,7 +242,7 @@ class smu:
 
     @property
     def enabled_outputs(self):
-        """Get dictionary of enabled state of channels."""
+        """Get dictionary of enabled state of all channels."""
         enabled_outputs = {}
         for ch in range(self.num_channels):
             dev_ix = self._channel_settings[ch]["dev_ix"]
@@ -254,6 +254,16 @@ class smu:
                 enabled_outputs[ch] = True
 
         return enabled_outputs
+
+    @property
+    def overcurrent(self):
+        """Get dictionary of overcurrent state of all channels."""
+        overcurrents = {}
+        for ch in range(self.num_channels):
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            overcurrents[ch] = self._session.devices[dev_ix].overcurrent
+
+        return overcurrents
 
     def connect(self, channel_mapping=None, sample_rate=100000):
         """Connect one or more devices (channels) to the session (SMU).
