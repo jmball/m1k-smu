@@ -14,14 +14,8 @@ import yaml
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
 
-# get primary ip address
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.connect(("10.255.255.255", 1))
-ip = s.getsockname()[0]
-s.close()
-
-HOST = ip
-PORT = 2101
+HOST = '0.0.0.0'  # server listens on all interfaces
+PORT = 20101
 TERMCHAR = "\n"
 TERMCHAR_BYTES = TERMCHAR.encode()
 
