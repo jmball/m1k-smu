@@ -403,7 +403,8 @@ class smu:
         channel B's for four-wire mode when there's only 1 channel per board.
         """
         # reset channel and measurement params
-        self.invert_channels(False)
+        if self.channels_inverted is True:
+            self.invert_channels(False)
         self._channel_settings = {}
         self._nplc_samples = 0
         self._settling_delay_samples = 0
