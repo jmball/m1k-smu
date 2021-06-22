@@ -78,9 +78,10 @@ class smu:
         # private attribute to hold pysmu session
         self._session = None
 
-        # private attribute to hold device serials and channel mapping
+        # private attribute to hold device serials, channel mapping, and inverted flag
         self._serials = None
         self._channel_mapping = None
+        self._channels_inverted = False
 
         # private attribute stating maximum buffer size of an ADALM1000
         self._maximum_buffer_size = 100000
@@ -265,6 +266,16 @@ class smu:
 
         return overcurrents
 
+    @property
+    def channel_mapping(self):
+        """Get channel mapping dictionary."""
+        return self._channel_mapping
+
+    @property
+    def channels_inverted(self):
+        """Get state on channel mapping reversal."""
+        return self._channels_inverted
+
     def connect(self, channel_mapping=None, sample_rate=100000):
         """Connect one or more devices (channels) to the session (SMU).
 
@@ -386,6 +397,7 @@ class smu:
         channel B's for four-wire mode when there's only 1 channel per board.
         """
         # reset channel and measurement params
+        self.invert_channels(False)
         self._channel_settings = {}
         self._nplc_samples = 0
         self._settling_delay_samples = 0
@@ -464,6 +476,43 @@ class smu:
 
             # store individual device channel
             self.channel_settings[ch]["dev_channel"] = info["sub_channel"]
+
+    def invert_channels(self, inverted=False):
+        """Invert the channel mapping.
+
+        Parameters
+        ----------
+        inverted : bool
+            Inverted state of the channel mapping. If an inverted state is supplied
+            that matches the current inverted state, this method has no effect.
+        """
+        if self.channels_inverted != inverted:
+            # build inverted channel mapping
+            max_ch = max(self._channel_mapping.keys())
+            new_channel_mapping = {}
+            for ch, info in self._channel_mapping.items():
+                # invert channel, doesn't matter whether `inverted` is True or False,
+                # all that's required is that it's different to the current setting
+                new_ch = abs(ch - max_ch)
+                new_channel_mapping[new_ch] = info
+
+            # build inverted channel settings
+            new_channel_settings = {}
+            for ch in self._channel_mapping.keys():
+                new_ch = abs(ch - max_ch)
+                new_channel_settings[new_ch] = self.channel_settings[ch]
+
+            # apply changes
+            self._channel_mapping = new_channel_mapping
+            self._channel_settings = new_channel_settings
+            self._channels_inverted = inverted
+        elif inverted is True:
+            warnings.warn(
+                "Channels are already inverted. Set `False` to revert to original "
+                + "channel mapping."
+            )
+        elif inverted is False:
+            warnings.warn("Channels are already in the original channel mapping.")
 
     def _reconnect(self):
         """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
