@@ -176,10 +176,7 @@ class smu:
     @property
     def num_channels(self):
         """Get the number of connected SMU channels."""
-        if self.ch_per_board == 1:
-            return self.num_boards
-        elif self.ch_per_board == 2:
-            return 2 * self.num_boards
+        return len(self.channel_mapping.keys())
 
     @property
     def num_boards(self):
@@ -245,7 +242,7 @@ class smu:
     def enabled_outputs(self):
         """Get dictionary of enabled state of all channels."""
         enabled_outputs = {}
-        for ch in range(self.num_channels):
+        for ch in self.channel_mapping.keys():
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
             mode = self._session.devices[dev_ix].channels[dev_channel].mode
@@ -260,7 +257,7 @@ class smu:
     def overcurrent(self):
         """Get dictionary of overcurrent state of all channels."""
         overcurrents = {}
-        for ch in range(self.num_channels):
+        for ch in self.channel_mapping.keys():
             dev_ix = self._channel_settings[ch]["dev_ix"]
             overcurrents[ch] = self._session.devices[dev_ix].overcurrent
 
@@ -678,7 +675,7 @@ class smu:
             Channel number (0-indexed). If `None` apply to all channels.
         """
         if channel is None:
-            channels = range(self.num_channels)
+            channels = self.channel_mapping.keys()
         else:
             channels = [channel]
 
@@ -707,7 +704,7 @@ class smu:
             Reset all settings to default.
         """
         if channel is None:
-            channels = range(self.num_channels)
+            channels = self.channel_mapping.keys()
         else:
             channels = [channel]
 
@@ -775,7 +772,7 @@ class smu:
                 + "(current)."
             )
 
-        for ch in range(self.num_channels):
+        for ch in self.channel_mapping.keys():
             self._channel_settings[ch]["sweep_mode"] = source_mode
 
             step = (stop - start) / (points - 1)
@@ -804,7 +801,7 @@ class smu:
         # convert list input to dictionary
         if type(values) is list:
             values_dict = {}
-            for ch in range(self.num_channels):
+            for ch in self.channel_mapping.keys():
                 values_dict[ch] = values
             values = values_dict
 
@@ -832,7 +829,7 @@ class smu:
         # validate/format values input
         if type(values) in [float, int]:
             values_dict = {}
-            for ch in range(self.num_channels):
+            for ch in self.channel_mapping.keys():
                 values_dict[ch] = values
             values = values_dict
 
@@ -887,7 +884,7 @@ class smu:
             channels = [channels]
 
         if channels is None:
-            channels = [i for i in range(self.num_channels)]
+            channels = list(self.channel_mapping.keys())
 
         err = None
         for attempt in range(1, self._retries + 1):
@@ -1394,7 +1391,7 @@ class smu:
             channels = [channels]
 
         if channels is None:
-            channels = [ch for ch in range(self.num_channels)]
+            channels = list(self.channel_mapping.keys())
 
         err = None
         for attempt in range(1, self._retries + 1):
@@ -1547,7 +1544,7 @@ class smu:
         setting = int("".join([str(int(s)) for s in [B, G, R]]), 2)
 
         if channel is None:
-            channels = range(self.num_channels)
+            channels = self.channel_mapping.keys()
         else:
             channels = [channel]
 
