@@ -348,7 +348,7 @@ class smu:
                 )
 
             # check there are no duplicates in channel mapping info
-            if len(set(_all_info)) != len(_all_info):
+            if len(set([str(info) for info in _all_info])) != len(_all_info):
                 raise ValueError(
                     "Duplicate channel info found in channel mapping. Check all "
                     + "channels are uniquely defined and try again."
