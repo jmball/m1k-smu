@@ -405,19 +405,16 @@ class smu:
         self._enabled_cache = {}
 
         # init with default settings
-        for ch in range(self.num_channels):
+        for ch in self.channel_mapping.keys():
             self._configure_channel_default_settings(ch)
 
         # get board mapping
         self._map_boards()
 
-        # turn off outputs
-        for ch in range(self.num_channels):
+        # update spare channel mode if only 1 in use per board
+        for ch in self.channel_mapping.keys():
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
-            # disable output (should already be disabled but just to make sure)
-            self.enable_output(False, ch)
-
             if self.ch_per_board == 1:
                 # if 1 channel per board, other sub_channel is only used for voltage
                 # measurement in four wire mode
@@ -452,6 +449,12 @@ class smu:
         # set default output value
         # this will reset all channel outputs to 0 V
         self.configure_dc(values=0, source_mode="v")
+
+        # cycle outputs to register change and avoid the defualt 2V setting showing
+        # on the output on first enable, then leave them all off
+        for ch in self.channel_mapping.keys():
+            self.enable_output(True, ch)
+            self.enable_output(False, ch)
 
         # init global settings
         # depends on session being created and device being connected and a
