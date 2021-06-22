@@ -334,7 +334,7 @@ class smu:
                 # verify sub channel string is valid
                 if info["sub_channel"] not in ["A", "B"]:
                     raise ValueError(
-                        f"Invalid sub-channel name in channel mapping for channel "
+                        "Invalid sub-channel name in channel mapping for channel "
                         + f"{channel}: {info['sub_channel']}. Must be 'A' or 'B'."
                     )
                 else:
