@@ -318,16 +318,20 @@ smu.connect(channel_mapping)
 # initialise a queue to hold incoming connections
 q = queue.Queue()
 
-# start worker thread to handle requests
-threading.Thread(target=worker, args=(smu,), daemon=True).start()
+# setup worker thread to handle requests
+worker_thread = threading.Thread(target=worker, args=(smu,), daemon=True)
+worker_thread.start()  # start worker thread
 
 # start server
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((HOST, PORT))
     s.listen()
 
     print(f"SMU server started listening on {HOST}:{PORT}")
 
     # add client connections to queue for worker
-    while True:
+    while worker_thread.is_alive():  # check if the thread has crashed
         q.put_nowait(s.accept())
+
+worker_thread.join()  # join the the worker thread back to the main one
