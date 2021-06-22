@@ -338,13 +338,12 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     while worker_thread.is_alive():  # check if the thread has crashed
         try:
             (conn, address) = s.accept()
-            q.put_nowait((conn, address))
         except Exception as e:
             if isinstance(e, socket.timeout):
                 # timeouts for s.accept() are cool
                 # that just means nobody sent us a message
                 # during the timeout interval
-                pass 
+                pass
             else:
                 raise(e)
         else:  # there was no exception
