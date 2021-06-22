@@ -10,6 +10,7 @@ import warnings
 import sys
 
 import yaml
+import pprint
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
@@ -19,6 +20,7 @@ PORT = 20101
 TERMCHAR = "\n"
 TERMCHAR_BYTES = TERMCHAR.encode()
 
+pp = pprint.PrettyPrinter(indent=2)
 
 # load config file
 try:
@@ -74,8 +76,8 @@ if config is not None:
 else:
     channel_mapping = None
 
-print(f"{channel_mapping=}")
-
+print("Channel Mapping:")
+pp.pprint(channel_mapping)
 
 def stringify_nonnative_dict_values(d):
     """Convert non-native types in a dictionary to a string representation.
