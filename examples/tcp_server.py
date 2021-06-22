@@ -19,6 +19,7 @@ HOST = "0.0.0.0"  # server listens on all interfaces
 PORT = 20101
 TERMCHAR = "\n"
 TERMCHAR_BYTES = TERMCHAR.encode()
+COMMS_TIMEOUT = 10  # in seconds
 
 pp = pprint.PrettyPrinter(indent=2)
 
@@ -146,18 +147,15 @@ def worker(smu):
     # run infinite loop to handle messages
     while True:
         conn, addr = q.get()
+        conn.settimeout(COMMS_TIMEOUT)
 
         with conn:
             # read incoming message
-            buf = b""
-            while True:
-                buf += conn.recv(1)
-                if buf.endswith(TERMCHAR_BYTES):
-                    break
+            with conn.makefile('r', newline=TERMCHAR) as cf:
+                msg = cf.readline().rstrip(TERMCHAR)
 
-            msg = buf.decode().strip(TERMCHAR)
-            msg_split = msg.split(" ")
             print(f"Message received: {msg}")
+            msg_split = msg.split(" ")
 
             # handle message
             resp = ""
@@ -330,6 +328,7 @@ worker_thread.start()  # start worker thread
 # start server
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.settimeout(COMMS_TIMEOUT)
     s.bind((HOST, PORT))
     s.listen()
 
@@ -337,6 +336,20 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
     # add client connections to queue for worker
     while worker_thread.is_alive():  # check if the thread has crashed
-        q.put_nowait(s.accept())
+        try:
+            (conn, address) = s.accept()
+            q.put_nowait((conn, address))
+        except Exception as e:
+            if isinstance(e, socket.timeout):
+                # timeouts for s.accept() are cool
+                # that just means nobody sent us a message
+                # during the timeout interval
+                pass 
+            else:
+                raise(e)
+        else:  # there was no exception
+            q.put_nowait((conn, address))
 
-worker_thread.join()  # join the the worker thread back to the main one
+# the the worker thread must have died
+# join it back to the main one
+worker_thread.join()
