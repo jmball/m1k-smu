@@ -75,9 +75,12 @@ if config is not None:
         )
 else:
     channel_mapping = None
+    cal_data_folder = None
+    idn = "SMU"
 
 print("Channel Mapping:")
 pp.pprint(channel_mapping)
+
 
 def stringify_nonnative_dict_values(d):
     """Convert non-native types in a dictionary to a string representation.
