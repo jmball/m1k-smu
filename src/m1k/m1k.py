@@ -322,10 +322,12 @@ class smu:
         else:
             # get list of unique serials and mapping info from channel mapping
             serials = []
+            _all_serials = []
             _all_info = []
             for channel, info in sorted(channel_mapping.items()):
                 # append serial to list of serials if not already added
                 serial = info["serial"]
+                _all_serials.append(serial)
                 if serial not in serials:
                     serials.append(serial)
 
@@ -337,6 +339,13 @@ class smu:
                     )
                 else:
                     _all_info.append(info)
+
+            # check channel mapping is compatible with ch_per_board setting
+            if (len(serials) != len(_all_serials)) and (self.ch_per_board == 1):
+                raise ValueError(
+                    "If channels per board is 1 all channels in the channel mapping "
+                    + "must be unique."
+                )
 
             # check there are no duplicates in channel mapping info
             if len(set(_all_info)) != len(_all_info):
