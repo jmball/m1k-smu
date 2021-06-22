@@ -72,9 +72,9 @@ if config is not None:
             "Channels per board setting not found. Using default channels per board."
         )
 else:
-    serials = None
+    channel_mapping = None
 
-print(f"Serials: {serials}")
+print(f"{channel_mapping=}")
 
 
 def stringify_nonnative_dict_values(d):
