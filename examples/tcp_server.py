@@ -315,12 +315,19 @@ def worker(smu):
         q.task_done()
 
 
+# a global flag for keeping track if an exception has occured in the worker thread
 worker_crashed = threading.Event()
 
 def worker_thread_exception_handler(args):
+    # set the flag indicating that the worker thread is toast
+    # checking is_alive() on the thread is too slow to properly
+    # react to the error in time to prevent another main loop cycle
     worker_crashed.set()
+
+    # show the user what killed the worker thread
     traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
-    #raise(ValueError("The worker thread crashed!"))
+
+    #raise(ValueError("The worker thread crashed! (see above for traceback)"))
 
 threading.excepthook = worker_thread_exception_handler
 
@@ -350,17 +357,18 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             (conn, address) = s.accept()
         except Exception as e:
             if isinstance(e, socket.timeout):
-                # timeouts for s.accept() are cool
+                # timeouts for s.accept() are cool,
                 # that just means nobody sent us a message
                 # during the timeout interval
                 pass
             else:
+                # non-timeout exceptions for accept() are not cool
                 raise(e)
         else:  # there was no exception
             if worker_thread.is_alive() and not worker_crashed.is_set():
-                # only deliver the connection if the worker is not dead or dying
+                # only deliver the connection to the worker if it is not dead or dying
                 q.put_nowait((conn, address))
 
-# the the worker thread must have died
-# join it back to the main one
+# the only way we got here is if the worker thread died
+# so join it back to the main one before termination
 worker_thread.join()
