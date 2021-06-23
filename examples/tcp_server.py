@@ -11,6 +11,7 @@ import sys
 
 import yaml
 import pprint
+import traceback
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
@@ -314,6 +315,15 @@ def worker(smu):
         q.task_done()
 
 
+worker_crashed = threading.Event()
+
+def worker_thread_exception_handler(args):
+    worker_crashed.set()
+    traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
+    #raise(ValueError("The worker thread crashed!"))
+
+threading.excepthook = worker_thread_exception_handler
+
 # init smu
 smu = m1k.smu(**init_args)
 smu.connect(channel_mapping)
@@ -335,7 +345,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     print(f"SMU server started listening on {HOST}:{PORT}")
 
     # add client connections to queue for worker
-    while worker_thread.is_alive():  # check if the thread has crashed
+    while worker_thread.is_alive() and not worker_crashed.is_set():
         try:
             (conn, address) = s.accept()
         except Exception as e:
@@ -347,7 +357,9 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             else:
                 raise(e)
         else:  # there was no exception
-            q.put_nowait((conn, address))
+            if worker_thread.is_alive() and not worker_crashed.is_set():
+                # only deliver the connection if the worker is not dead or dying
+                q.put_nowait((conn, address))
 
 # the the worker thread must have died
 # join it back to the main one
