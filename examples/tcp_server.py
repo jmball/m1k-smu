@@ -369,6 +369,3 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 # only deliver the connection to the worker if it is not dead or dying
                 q.put_nowait((conn, address))
 
-# the only way we got here is if the worker thread died
-# so join it back to the main one before termination
-worker_thread.join()
