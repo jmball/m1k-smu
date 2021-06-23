@@ -373,3 +373,6 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 # but only if it crashed
 if (not worker_thread.is_alive()) or (worker_crashed.is_set()):
     worker_thread.join()
+
+# it's not possible to exit this program without an error
+sys.exit(-1)
