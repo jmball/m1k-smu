@@ -107,6 +107,11 @@ class smu:
         # device error is encountered
         self._enabled_cache = {}
 
+        # when a channel gets measured in high impedance mode both sub-channels on the
+        # board DAC get locked at ~2V requiring a hard reset. Keep a cache of which
+        # channels need a reset
+        self._reset_cache = {}
+
     def __del__(self):
         """Try to disconnect."""
         self.disconnect()
@@ -411,15 +416,17 @@ class smu:
         self._samples_per_datum = 0
         self._enabled_cache = {}
 
+        channels = list(self.channel_mapping.keys())
+
         # init with default settings
-        for ch in self.channel_mapping.keys():
+        for ch in channels:
             self._configure_channel_default_settings(ch)
 
         # get board mapping
         self._map_boards()
 
         # update spare channel mode if only 1 in use per board
-        for ch in self.channel_mapping.keys():
+        for ch in channels:
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
             if self.ch_per_board == 1:
@@ -459,9 +466,8 @@ class smu:
 
         # cycle outputs to register change and avoid the defualt 2V setting showing
         # on the output on first enable, then leave them all off
-        for ch in self.channel_mapping.keys():
-            self.enable_output(True, ch)
-            self.enable_output(False, ch)
+        self.enable_output(True, channels)
+        self.enable_output(False, channels)
 
         # init global settings
         # depends on session being created and device being connected and a
@@ -525,7 +531,7 @@ class smu:
             warnings.warn("Channels are already in the original channel mapping.")
 
     def _reconnect(self):
-        """Attempt to reconnect boards if one or more gets unexpectedly dropped."""
+        """Attempt to reconnect boards if one or more gets dropped."""
         # remove all devices from the session
         for dev in self._session.devices:
             try:
@@ -972,6 +978,24 @@ class smu:
                     self._session.devices[dev_ix].channels[dev_channel].mode
                 )
 
+        # reset any channels in this request that were added to the reset cache in the
+        # previous measurement
+        reset_channels = []
+        for ch in channels:
+            if self._reset_cache[ch] is True:
+                reset_channels.append(ch)
+        self._reset_boards(reset_channels)
+
+        # update reset cache for this measurement request
+        for ch in self.channel_mapping.keys():
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+            mode = self._session.devices[dev_ix].channels[dev_channel].mode
+            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                self._reset_cache[ch] = True
+            else:
+                self._reset_cache[ch] = False
+
         # build samples list accounting for nplc and settling delay
         # set number of samples requested as maximum of all requested channels
         ch_samples = {}
@@ -980,21 +1004,8 @@ class smu:
             values = self._channel_settings[ch][f"{measurement}_values"]
             meas_mode = self._channel_settings[ch][f"{measurement}_mode"]
 
-            # add offset if lo is 2.5V
-            offset = 0
-            if meas_mode == "v":
-                if self._channel_settings[ch]["v_range"] == 2.5:
-                    # channel LO connected to 2.5 V
-                    offset = 2.5
-
-            values = [x + offset for x in values]
-
-            # update set values according to external calibration
-            if self._channel_settings[ch]["calibration_mode"] == "external":
-                dev_channel = self._channel_settings[ch]["dev_channel"]
-                cal = self._channel_settings[ch]["external_calibration"][dev_channel]
-                f_int = cal[f"source_{meas_mode}"]["set"]
-                values = f_int(values).tolist()
+            # update setpoints according voltage range and cal if required
+            values = self._update_values(ch, values, meas_mode)
 
             samples = []
             for value in values:
@@ -1112,6 +1123,70 @@ class smu:
                     self.enable_output(True, ch)
 
         return raw_data, overcurrents, t0
+
+    def _reset_boards(self, reset_channels):
+        """Reset boards to default state.
+
+        Requires firmware mod.
+
+        Parameters
+        ----------
+        reset_channels : list
+            List of SMU channels to reset.
+        """
+        # find all unique boards that require resetting
+        dev_ixs = set([self.channel_settings[ch]["dev_ix"] for ch in reset_channels])
+
+        # reset boards that require it
+        reset_devs = 0
+        for dev_ix in dev_ixs:
+            # only try to reset devices with modified firmware
+            if self._session.devices[dev_ix].fwver.endswith("-mod"):
+                dev = self._session.devices[dev_ix]
+                try:
+                    dev.ctrl_transfer(0x40, 0x26, 0, 0, 0, 0, 100)
+                except OSError:
+                    pass
+                reset_devs += 1
+
+        # after resetting the boards they get detatched so reconnect them
+        if reset_devs > 0:
+            self._reconnect()
+
+    def _update_values(self, ch, values, meas_mode):
+        """Update set values according to voltage range and external calibration.
+
+        Parameters
+        ----------
+        ch : int
+            SMU channel (0-indexed).
+        values : list
+            List of voltage or current set points to measure.
+        meas_mode : str
+            Measurement source mode: "v" (voltage) or "i" (current).
+
+        Results
+        -------
+        values : list
+            List of voltage or current set points to measure, re-scaled according to
+            calibration settings.
+        """
+        # add offset if lo is 2.5V
+        offset = 0
+        if meas_mode == "v":
+            if self._channel_settings[ch]["v_range"] == 2.5:
+                # channel LO connected to 2.5 V
+                offset = 2.5
+        values = [x + offset for x in values]
+
+        # update set value according to external cal
+        if self._channel_settings[ch]["calibration_mode"] == "external":
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+            cal = self._channel_settings[ch]["external_calibration"][dev_channel]
+            f_int = cal[f"source_{meas_mode}"]["set"]
+            values = f_int(values).tolist()
+
+        return values
 
     def _process_data(self, raw_data, channels, measurement, overcurrents, t0):
         """Process raw data accounting for NPLC and settling delay.
@@ -1435,91 +1510,132 @@ class smu:
             List of channel numbers (0-indexed). If only one channel is required its
             number can be provided as an int. If `None`, apply to all channels.
         """
+        set_channels = []
         for ch in channels:
-            dev_ix = self._channel_settings[ch]["dev_ix"]
-            dev_channel = self._channel_settings[ch]["dev_channel"]
+            if ch not in set_channels:
+                dev_ix = self._channel_settings[ch]["dev_ix"]
+                dev_ch = self._channel_settings[ch]["dev_channel"]
 
-            # cache enable setting in case a reconnect is required
-            self._enabled_cache[ch] = enable
+                # cache enable setting in case a reconnect is required
+                self._enabled_cache[ch] = enable
 
-            if enable is True:
-                dc_values = self._channel_settings[ch]["dc_values"]
-                source_mode = self._channel_settings[ch]["dc_mode"]
-
-                # add offset is LO is 2.5 V
-                offset = 0
-                if source_mode == "v":
-                    if self._channel_settings[ch]["v_range"] == 2.5:
-                        # channel LO connected to 2.5 V
-                        offset = 2.5
-                dc_values = [x + offset for x in dc_values]
-
-                # update set value according to external calibration
-                if self._channel_settings[ch]["calibration_mode"] == "external":
-                    dev_channel = self._channel_settings[ch]["dev_channel"]
-                    cal = self._channel_settings[ch]["external_calibration"][
-                        dev_channel
-                    ]
-                    f_int = cal[f"source_{source_mode}"]["set"]
-                    dc_values = f_int(dc_values).tolist()
-
-                # write dc value
-                self._session.devices[dev_ix].channels[dev_channel].write(dc_values)
-
-                # determine source mode
-                if source_mode is True:
-                    if self._channel_settings[ch]["dc_mode"] == "v":
-                        mode = pysmu.Mode.SVMI_SPLIT
+                # get details of other channel on the same board
+                if self.ch_per_board == 2:
+                    if dev_ch == "A":
+                        other_dev_ch = "B"
                     else:
-                        mode = pysmu.Mode.SIMV_SPLIT
-                else:
+                        other_dev_ch = "A"
+
+                    other_ch = None
+                    for _ch, settings in self.channel_settings.items():
+                        if (settings["dev_ix"] == dev_ix) and (_ch != ch):
+                            other_ch = _ch
+                            if other_ch in channels:
+                                self._enabled_cache[other_ch] = enable
+                            break
+
+                if enable is True:
+                    dc_values = self._channel_settings[ch]["dc_values"]
+                    source_mode = self._channel_settings[ch]["dc_mode"]
+
+                    # add offset if LO is 2.5 V
+                    offset = 0
                     if source_mode == "v":
-                        mode = pysmu.Mode.SVMI
+                        if self._channel_settings[ch]["v_range"] == 2.5:
+                            # channel LO connected to 2.5 V
+                            offset = 2.5
+                    dc_values = [x + offset for x in dc_values]
+
+                    # update set value according to external calibration
+                    if self._channel_settings[ch]["calibration_mode"] == "external":
+                        cal = self._channel_settings[ch]["external_calibration"][dev_ch]
+                        f_int = cal[f"source_{source_mode}"]["set"]
+                        dc_values = f_int(dc_values).tolist()
+
+                    # write dc value
+                    self._session.devices[dev_ix].channels[dev_ch].write(dc_values)
+
+                    # determine source mode
+                    if self._channel_settings[ch]["four_wire"] is True:
+                        if self._channel_settings[ch]["dc_mode"] == "v":
+                            mode = pysmu.Mode.SVMI_SPLIT
+                        else:
+                            mode = pysmu.Mode.SIMV_SPLIT
                     else:
-                        mode = pysmu.Mode.SIMV
+                        if source_mode == "v":
+                            mode = pysmu.Mode.SVMI
+                        else:
+                            mode = pysmu.Mode.SIMV
 
-                # set leds
-                self.set_leds(channel=ch, G=True, B=True)
+                    # set leds
+                    self.set_leds(channel=ch, G=True, B=True)
 
-                # set output mode
-                self._session.devices[dev_ix].channels[dev_channel].mode = mode
+                    # set output modes
+                    self._session.devices[dev_ix].channels[dev_ch].mode = mode
+                    # self._session.devices[dev_ix].channels[
+                    #     other_dev_ch
+                    # ].mode = other_mode
 
-                # run and read one sample to update output value
-                self._session.run(1)
-                self._session.read(1, self.read_timeout)
+                    # run and read one sample to update output value
+                    self._session.run(1)
+                    self._session.read(1, self.read_timeout)
 
-                # if libsmu mod is not available the output turns off after the run
-                if self._libsmu_mod is False:
-                    self._session.devices[dev_ix].channels[dev_channel].mode = mode
-            else:
-                if self._channel_settings[ch]["four_wire"] is True:
-                    mode = pysmu.Mode.HI_Z_SPLIT
+                    # if libsmu mod is not available the output turns off after the run
+                    if self._libsmu_mod is False:
+                        self._session.devices[dev_ix].channels[dev_ch].mode = mode
+                        # if (self.ch_per_board == 2) and (other_ch in channels):
+                        #     self._session.devices[dev_ix].channels[
+                        #         other_dev_ch
+                        #     ].mode = other_mode
                 else:
-                    mode = pysmu.Mode.HI_Z
-
-                # if both channels on a board are accessible, only turn off the blue
-                # LED if both channels are off
-                if self.ch_per_board == 1:
-                    self.set_leds(channel=ch, G=True)
-                elif self.ch_per_board == 2:
-                    if dev_channel == "A":
-                        other_channel_mode = (
-                            self._session.devices[dev_ix].channels["B"].mode
-                        )
+                    if self._channel_settings[ch]["four_wire"] is True:
+                        mode = pysmu.Mode.HI_Z_SPLIT
                     else:
-                        other_channel_mode = (
-                            self._session.devices[dev_ix].channels["A"].mode
-                        )
+                        mode = pysmu.Mode.HI_Z
 
-                    if other_channel_mode in [
-                        pysmu.Mode.HI_Z,
-                        pysmu.Mode.HI_Z_SPLIT,
-                    ]:
-                        # the other channel is off so ok to turn off blue LED
+                    # if both channels on a board are accessible, only turn off the blue
+                    # LED if both channels are off
+                    if self.ch_per_board == 1:
                         self.set_leds(channel=ch, G=True)
+                    elif self.ch_per_board == 2:
+                        if dev_ch == "A":
+                            other_channel_mode = (
+                                self._session.devices[dev_ix].channels["B"].mode
+                            )
+                        else:
+                            other_channel_mode = (
+                                self._session.devices[dev_ix].channels["A"].mode
+                            )
 
-                # set output mode
-                self._session.devices[dev_ix].channels[dev_channel].mode = mode
+                        if other_channel_mode in [
+                            pysmu.Mode.HI_Z,
+                            pysmu.Mode.HI_Z_SPLIT,
+                        ]:
+                            # the other channel is off so ok to turn off blue LED
+                            self.set_leds(channel=ch, G=True)
+
+                    # set output mode
+                    self._session.devices[dev_ix].channels[dev_ch].mode = mode
+
+    def _write_dc_values(ch, dev_ix, dev_ch):
+        """Write a DC value to a device sub-channel.
+
+        Parameters
+        ----------
+        ch : int
+            SMU channel, i.e. channels that are keys in channel_mapping and
+            channel_settings.
+        dev_ix : int
+            Device index.
+        dev_ch : str
+            Device sub-channel, "A" or "B".
+
+        Returns
+        -------
+        mode : pysmu.Mode
+            Sub-channel mode.
+        """
+        pass
 
     def get_channel_id(self, channel):
         """Get the serial number of requested channel.
