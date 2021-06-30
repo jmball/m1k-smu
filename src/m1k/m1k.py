@@ -1,6 +1,7 @@
 """Source measure unit based on the ADALM1000."""
 
 import math
+import platform
 import time
 import warnings
 
@@ -522,35 +523,45 @@ class smu:
         elif inverted is False:
             warnings.warn("Channels are already in the original channel mapping.")
 
-    def _reconnect(self):
-        """Attempt to reconnect boards if one or more gets dropped."""
-        # remove all devices from the session
-        for dev in self._session.devices:
-            try:
-                self._session.remove(dev)
-            except pysmu.SessionError:
-                self._session.remove(dev, True)
+    def _reconnect(self, err):
+        """Attempt to reconnect boards if one or more gets dropped.
 
-        # destroy the session
-        del self._session
-        self._session = None
+        Parameters
+        ----------
+        err : Exception
+            Exception that triggered attampt to reconnect.
+        """
+        if platform.system() == "Windows":
+            # reconnecting isn't possible on Windows to re-raise the error
+            raise err
+        else:
+            # remove all devices from the session
+            for dev in self._session.devices:
+                try:
+                    self._session.remove(dev)
+                except pysmu.SessionError:
+                    self._session.remove(dev, True)
 
-        # create a new one
-        self._session = pysmu.Session(add_all=False)
+            # destroy the session
+            del self._session
+            self._session = None
 
-        # scan for available devices, one or more has probably changed adress
-        self._session.scan()
+            # create a new one
+            self._session = pysmu.Session(add_all=False)
 
-        # add devices to session again
-        for serial in self._serials:
-            self._connect_board(serial)
+            # scan for available devices, one or more has probably changed adress
+            self._session.scan()
 
-        # update board mapping
-        self._map_boards()
+            # add devices to session again
+            for serial in self._serials:
+                self._connect_board(serial)
 
-        # attempt to re-enable outputs according to cache
-        for ch, enable in self._enabled_cache.items():
-            self.enable_output(enable, ch)
+            # update board mapping
+            self._map_boards()
+
+            # attempt to re-enable outputs according to cache
+            for ch, enable in self._enabled_cache.items():
+                self.enable_output(enable, ch)
 
     def disconnect(self):
         """Disconnect all devices from the session.
