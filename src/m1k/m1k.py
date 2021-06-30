@@ -67,14 +67,6 @@ class smu:
         self.read_timeout = read_timeout
         self.i_threshold = abs(i_threshold)
 
-        # determine whether using backend version with libsmu mod
-        if pysmu.__version__.endswith("-mod") is True:
-            self._libsmu_mod = True
-            print("---Using modified libsmu backend---")
-        else:
-            self._libsmu_mod = False
-            print("---Using original libsmu backend---")
-
         # private attribute to hold pysmu session
         self._session = None
 
@@ -1497,114 +1489,82 @@ class smu:
             List of channel numbers (0-indexed). If only one channel is required its
             number can be provided as an int. If `None`, apply to all channels.
         """
-        set_channels = []
         for ch in channels:
-            if ch not in set_channels:
-                dev_ix = self._channel_settings[ch]["dev_ix"]
-                dev_ch = self._channel_settings[ch]["dev_channel"]
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_ch = self._channel_settings[ch]["dev_channel"]
 
-                # cache enable setting in case a reconnect is required
-                self._enabled_cache[ch] = enable
+            # cache enable setting in case a reconnect is required
+            self._enabled_cache[ch] = enable
 
-                # get details of other channel on the same board
-                if self.ch_per_board == 2:
-                    if dev_ch == "A":
-                        other_dev_ch = "B"
-                    else:
-                        other_dev_ch = "A"
+            if enable is True:
+                # set leds
+                self.set_leds(channel=ch, G=True, B=True)
 
-                    other_ch = None
-                    for _ch, settings in self.channel_settings.items():
-                        if (settings["dev_ix"] == dev_ix) and (_ch != ch):
-                            other_ch = _ch
-                            if other_ch in channels:
-                                self._enabled_cache[other_ch] = enable
-                            break
+                dc_values = self._channel_settings[ch]["dc_values"]
+                source_mode = self._channel_settings[ch]["dc_mode"]
 
-                if enable is True:
-                    dc_values = self._channel_settings[ch]["dc_values"]
-                    source_mode = self._channel_settings[ch]["dc_mode"]
+                # update values depending on mode and cal
+                dc_values = self._update_values(ch, dc_values, source_mode)
 
-                    # add offset if LO is 2.5 V
-                    offset = 0
-                    if source_mode == "v":
-                        if self._channel_settings[ch]["v_range"] == 2.5:
-                            # channel LO connected to 2.5 V
-                            offset = 2.5
-                    dc_values = [x + offset for x in dc_values]
-
-                    # update set value according to external calibration
-                    if self._channel_settings[ch]["calibration_mode"] == "external":
-                        cal = self._channel_settings[ch]["external_calibration"][dev_ch]
-                        f_int = cal[f"source_{source_mode}"]["set"]
-                        dc_values = f_int(dc_values).tolist()
-
-                    # write dc value
-                    self._session.devices[dev_ix].channels[dev_ch].write(dc_values)
-
-                    # determine source mode
+                # if source is enabled but changing modes, first reset output to 0 and
+                # then disable it
+                mode = self._session.devices[dev_ix].channels[dev_ch].mode
+                if mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]:
+                    self._write_dc_values(ch, dev_ix, dev_ch, [0], "v")
                     if self._channel_settings[ch]["four_wire"] is True:
-                        if self._channel_settings[ch]["dc_mode"] == "v":
-                            mode = pysmu.Mode.SVMI_SPLIT
-                        else:
-                            mode = pysmu.Mode.SIMV_SPLIT
+                        self._session.devices[dev_ix].channels[
+                            dev_ch
+                        ].mode = pysmu.Mode.HI_Z_SPLIT
                     else:
-                        if source_mode == "v":
-                            mode = pysmu.Mode.SVMI
-                        else:
-                            mode = pysmu.Mode.SIMV
-
-                    # set leds
-                    self.set_leds(channel=ch, G=True, B=True)
-
-                    # set output modes
-                    self._session.devices[dev_ix].channels[dev_ch].mode = mode
-                    # self._session.devices[dev_ix].channels[
-                    #     other_dev_ch
-                    # ].mode = other_mode
-
-                    # run and read one sample to update output value
-                    self._session.run(1)
-                    self._session.read(1, self.read_timeout)
-
-                    # if libsmu mod is not available the output turns off after the run
-                    if self._libsmu_mod is False:
-                        self._session.devices[dev_ix].channels[dev_ch].mode = mode
-                        # if (self.ch_per_board == 2) and (other_ch in channels):
-                        #     self._session.devices[dev_ix].channels[
-                        #         other_dev_ch
-                        #     ].mode = other_mode
+                        self._session.devices[dev_ix].channels[
+                            dev_ch
+                        ].mode = pysmu.Mode.HI_Z
+                elif mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]:
+                    self._write_dc_values(ch, dev_ix, dev_ch, [0], "i")
+                    if self._channel_settings[ch]["four_wire"] is True:
+                        self._session.devices[dev_ix].channels[
+                            dev_ch
+                        ].mode = pysmu.Mode.HI_Z_SPLIT
+                    else:
+                        self._session.devices[dev_ix].channels[
+                            dev_ch
+                        ].mode = pysmu.Mode.HI_Z
                 else:
-                    if self._channel_settings[ch]["four_wire"] is True:
-                        mode = pysmu.Mode.HI_Z_SPLIT
+                    pass
+
+                # update output
+                self._write_dc_values(ch, dev_ix, dev_ch, dc_values, source_mode)
+            else:
+                if self._channel_settings[ch]["four_wire"] is True:
+                    mode = pysmu.Mode.HI_Z_SPLIT
+                else:
+                    mode = pysmu.Mode.HI_Z
+
+                # if both channels on a board are accessible, only turn off the blue
+                # LED if both channels are off
+                if self.ch_per_board == 1:
+                    self.set_leds(channel=ch, G=True)
+                elif self.ch_per_board == 2:
+                    if dev_ch == "A":
+                        other_channel_mode = (
+                            self._session.devices[dev_ix].channels["B"].mode
+                        )
                     else:
-                        mode = pysmu.Mode.HI_Z
+                        other_channel_mode = (
+                            self._session.devices[dev_ix].channels["A"].mode
+                        )
 
-                    # if both channels on a board are accessible, only turn off the blue
-                    # LED if both channels are off
-                    if self.ch_per_board == 1:
+                    if other_channel_mode in [
+                        pysmu.Mode.HI_Z,
+                        pysmu.Mode.HI_Z_SPLIT,
+                    ]:
+                        # the other channel is off so ok to turn off blue LED
                         self.set_leds(channel=ch, G=True)
-                    elif self.ch_per_board == 2:
-                        if dev_ch == "A":
-                            other_channel_mode = (
-                                self._session.devices[dev_ix].channels["B"].mode
-                            )
-                        else:
-                            other_channel_mode = (
-                                self._session.devices[dev_ix].channels["A"].mode
-                            )
 
-                        if other_channel_mode in [
-                            pysmu.Mode.HI_Z,
-                            pysmu.Mode.HI_Z_SPLIT,
-                        ]:
-                            # the other channel is off so ok to turn off blue LED
-                            self.set_leds(channel=ch, G=True)
+                # set output mode
+                self._session.devices[dev_ix].channels[dev_ch].mode = mode
 
-                    # set output mode
-                    self._session.devices[dev_ix].channels[dev_ch].mode = mode
-
-    def _write_dc_values(ch, dev_ix, dev_ch):
+    def _write_dc_values(self, ch, dev_ix, dev_ch, dc_values, source_mode):
         """Write a DC value to a device sub-channel.
 
         Parameters
@@ -1616,13 +1576,60 @@ class smu:
             Device index.
         dev_ch : str
             Device sub-channel, "A" or "B".
+        dc_values : list
+            DC value to set output to.
 
         Returns
         -------
         mode : pysmu.Mode
             Sub-channel mode.
         """
-        pass
+        # determine and set source mode
+        if self._channel_settings[ch]["four_wire"] is True:
+            if source_mode == "v":
+                mode = pysmu.Mode.SVMI_SPLIT
+            else:
+                mode = pysmu.Mode.SIMV_SPLIT
+        else:
+            if source_mode == "v":
+                mode = pysmu.Mode.SVMI
+            else:
+                mode = pysmu.Mode.SIMV
+
+        if self._session.devices[dev_ix].fwver.endswith("-mod"):
+            # firmware mod is available to possible to set DAC directly
+            # scale dc value for DAC according to mode
+            if source_mode == "v":
+                # (max 5 V, 16-bit)
+                dac_val = (dc_values[0] / 5) * 65535
+            else:
+                # (max +/- 200 mA, 16-bit)
+                dac_val = ((dc_values[0] + 0.2) / 0.4) * 65535
+
+            # convert sub-channel letter to number
+            if dev_ch == "A":
+                dev_ch_num = 0
+            else:
+                dev_ch_num = 1
+
+            # write to DAC
+            self._session.devices[dev_ix].ctrl_transfer(
+                0x40, 0x27, dac_val, dev_ch_num, 0, 0, 0, 100
+            )
+
+            # set output mode
+            self._session.devices[dev_ix].channels[dev_ch].mode = mode
+        else:
+            # firmware mod not available so run a measuremnt to update the value
+            # write value to buffer
+            self._session.devices[dev_ix].channels[dev_ch].write(dc_values)
+
+            # set output mode
+            self._session.devices[dev_ix].channels[dev_ch].mode = mode
+
+            # run non-blocking measurement to update output value
+            self._session.start(1)
+            self._session.read(1, self.read_timeout)
 
     def get_channel_id(self, channel):
         """Get the serial number of requested channel.
