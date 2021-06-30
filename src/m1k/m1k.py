@@ -977,16 +977,6 @@ class smu:
         t0 : float
             Reading start time in s.
         """
-        if (self._libsmu_mod is False) or (measurement == "sweep"):
-            # get current mode to determine whether output needs to be re-enabled
-            start_modes = {}
-            for ch in channels:
-                dev_ix = self._channel_settings[ch]["dev_ix"]
-                dev_channel = self._channel_settings[ch]["dev_channel"]
-                start_modes[ch] = (
-                    self._session.devices[dev_ix].channels[dev_channel].mode
-                )
-
         # reset any channels in this request that were added to the reset cache in the
         # previous measurement
         reset_channels = []
@@ -1108,13 +1098,6 @@ class smu:
                 chunk_overcurrents[ch] = self._session.devices[dev_ix].overcurrent
             overcurrents.append(chunk_overcurrents)
 
-            # re-set output modes if using unmodified backend
-            if self._libsmu_mod is False:
-                for ch, mode in start_modes.items():
-                    dev_ix = self._channel_settings[ch]["dev_ix"]
-                    dev_channel = self._channel_settings[ch]["dev_channel"]
-                    self._session.devices[dev_ix].channels[dev_channel].mode = mode
-
         # disable/enable outputs as required
         for ch in channels:
             # if a sweep has been performed update the dc output to the last value to
@@ -1125,12 +1108,6 @@ class smu:
                     values = self._channel_settings[ch]["sweep_values"]
                     requested_mode = self._channel_settings[ch]["sweep_mode"]
                     self.configure_dc({ch: values[-1]}, requested_mode)
-
-            # original libsmu turns off output after run so turn it back on again if it
-            # was on before measurement started
-            if self._libsmu_mod is False:
-                if start_modes[ch] not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
-                    self.enable_output(True, ch)
 
         return raw_data, overcurrents, t0
 
