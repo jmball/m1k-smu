@@ -11,6 +11,7 @@ import sys
 
 import yaml
 import pprint
+import traceback
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
@@ -19,6 +20,7 @@ HOST = "0.0.0.0"  # server listens on all interfaces
 PORT = 20101
 TERMCHAR = "\n"
 TERMCHAR_BYTES = TERMCHAR.encode()
+COMMS_TIMEOUT = 10  # in seconds
 
 pp = pprint.PrettyPrinter(indent=2)
 
@@ -146,18 +148,15 @@ def worker(smu):
     # run infinite loop to handle messages
     while True:
         conn, addr = q.get()
+        conn.settimeout(COMMS_TIMEOUT)
 
         with conn:
             # read incoming message
-            buf = b""
-            while True:
-                buf += conn.recv(1)
-                if buf.endswith(TERMCHAR_BYTES):
-                    break
+            with conn.makefile('r', newline=TERMCHAR) as cf:
+                msg = cf.readline().rstrip(TERMCHAR)
 
-            msg = buf.decode().strip(TERMCHAR)
-            msg_split = msg.split(" ")
             print(f"Message received: {msg}")
+            msg_split = msg.split(" ")
 
             # handle message
             resp = ""
@@ -316,6 +315,22 @@ def worker(smu):
         q.task_done()
 
 
+# a global flag for keeping track if an exception has occured in the worker thread
+worker_crashed = threading.Event()
+
+def worker_thread_exception_handler(args):
+    # set the flag indicating that the worker thread is toast
+    # checking is_alive() on the thread is too slow to properly
+    # react to the error in time to prevent another main loop cycle
+    worker_crashed.set()
+
+    # show the user what killed the worker thread
+    traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
+
+    #raise(ValueError("The worker thread crashed! (see above for traceback)"))
+
+threading.excepthook = worker_thread_exception_handler
+
 # init smu
 smu = m1k.smu(**init_args)
 smu.connect(channel_mapping)
@@ -330,13 +345,34 @@ worker_thread.start()  # start worker thread
 # start server
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.settimeout(COMMS_TIMEOUT)
     s.bind((HOST, PORT))
     s.listen()
 
     print(f"SMU server started listening on {HOST}:{PORT}")
 
     # add client connections to queue for worker
-    while worker_thread.is_alive():  # check if the thread has crashed
-        q.put_nowait(s.accept())
+    while worker_thread.is_alive() and not worker_crashed.is_set():
+        try:
+            (conn, address) = s.accept()
+        except Exception as e:
+            if isinstance(e, socket.timeout):
+                # timeouts for s.accept() are cool,
+                # that just means nobody sent us a message
+                # during the timeout interval
+                pass
+            else:
+                # non-timeout exceptions for accept() are not cool
+                raise(e)
+        else:  # there was no exception
+            if worker_thread.is_alive() and not worker_crashed.is_set():
+                # only deliver the connection to the worker if it is not dead or dying
+                q.put_nowait((conn, address))
 
-worker_thread.join()  # join the the worker thread back to the main one
+# rejoin the worker thread to the main one,
+# but only if it crashed
+if (not worker_thread.is_alive()) or (worker_crashed.is_set()):
+    worker_thread.join()
+
+# it's not possible to exit this program without an error
+sys.exit(-1)
