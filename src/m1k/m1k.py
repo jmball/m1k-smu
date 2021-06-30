@@ -945,6 +945,15 @@ class smu:
     def _measure(self, channels, measurement, allow_chunking):
         """Perform a DC or sweep measurement.
 
+        Some care needs to be taken with how the output states are set during a
+        measurement because of limitations in the board firmware/libsmu backend.
+        Whenever a measurement runs on a channel in high impedance mode the DAC gets
+        locked in a state with ~2 V on its output. This means under normal operation
+        there will be ~2 V or ~-0.038 A on the output when the channel mode gets set to
+        SVMI mode or SIMV mode, respectively. If the firmware mod is available, this
+        can be avoided with a hard reset of the board triggered by software if running
+        on a non-Windows operating system.
+
         Parameters
         ----------
         channels : list
@@ -991,10 +1000,11 @@ class smu:
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
             mode = self._session.devices[dev_ix].channels[dev_channel].mode
-            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+            # only update if reset hasn't already been cached as True
+            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT] and (
+                self._reset_cache[ch] is False
+            ):
                 self._reset_cache[ch] = True
-            else:
-                self._reset_cache[ch] = False
 
         # build samples list accounting for nplc and settling delay
         # set number of samples requested as maximum of all requested channels
