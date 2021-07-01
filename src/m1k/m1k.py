@@ -529,7 +529,7 @@ class smu:
         elif inverted is False:
             warnings.warn("Channels are already in the original channel mapping.")
 
-    def _reconnect(self, err):
+    def _reconnect(self, err=None):
         """Attempt to reconnect boards if one or more gets dropped.
 
         Parameters
@@ -538,8 +538,9 @@ class smu:
             Exception that triggered attampt to reconnect.
         """
         if platform.system() == "Windows":
-            # reconnecting isn't possible on Windows to re-raise the error
-            raise err
+            # reconnecting isn't possible on Windows to re-raise the error if avilable
+            if err is not None:
+                raise err
         else:
             # remove all devices from the session
             for dev in self._session.devices:
