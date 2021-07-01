@@ -445,11 +445,13 @@ class smu:
                                 "`pysmu.DeviceError` occurred setting channel B for "
                                 + "four-wire mode, attempting to reconnect and retry."
                             )
-                            self._reconnect()
+                            self._reconnect(e)
                             continue
 
                 if err is not None:
                     raise err
+
+            self._reset_cache[ch] = False
 
         # ---the order of actions below is critical---
 
@@ -459,8 +461,8 @@ class smu:
 
         # cycle outputs to register change and avoid the defualt 2V setting showing
         # on the output on first enable, then leave them all off
-        self.enable_output(True, channels)
-        self.enable_output(False, channels)
+        self.enable_output(True)
+        self.enable_output(False)
 
         # init global settings
         # depends on session being created and device being connected and a
@@ -920,7 +922,7 @@ class smu:
                         "`pysmu.SessionError` occurred during `measure()`, attempting "
                         + "to reconnect and retry."
                     )
-                    self._reconnect()
+                    self._reconnect(e)
                     continue
             except pysmu.DeviceError as e:
                 if attempt == self._retries:
@@ -930,7 +932,7 @@ class smu:
                         "`pysmu.DeviceError` occurred during `measure()`, attempting "
                         + "to reconnect and retry."
                     )
-                    self._reconnect()
+                    self._reconnect(e)
                     continue
 
         if err is not None:
@@ -1117,31 +1119,34 @@ class smu:
     def _reset_boards(self, reset_channels):
         """Reset boards to default state.
 
-        Requires firmware mod.
+        Requires firmware mod. Cannot be done on Windows.
 
         Parameters
         ----------
         reset_channels : list
             List of SMU channels to reset.
         """
-        # find all unique boards that require resetting
-        dev_ixs = set([self.channel_settings[ch]["dev_ix"] for ch in reset_channels])
+        if platform.system() != "Windows":
+            # find all unique boards that require resetting
+            dev_ixs = set(
+                [self.channel_settings[ch]["dev_ix"] for ch in reset_channels]
+            )
 
-        # reset boards that require it
-        reset_devs = 0
-        for dev_ix in dev_ixs:
-            # only try to reset devices with modified firmware
-            if self._session.devices[dev_ix].fwver.endswith("-mod"):
-                dev = self._session.devices[dev_ix]
-                try:
-                    dev.ctrl_transfer(0x40, 0x26, 0, 0, 0, 0, 100)
-                except OSError:
-                    pass
-                reset_devs += 1
+            # reset boards that require it
+            reset_devs = 0
+            for dev_ix in dev_ixs:
+                # only try to reset devices with modified firmware
+                if self._session.devices[dev_ix].fwver.endswith("-mod"):
+                    dev = self._session.devices[dev_ix]
+                    try:
+                        dev.ctrl_transfer(0x40, 0x26, 0, 0, 0, 0, 100)
+                    except OSError:
+                        pass
+                    reset_devs += 1
 
-        # after resetting the boards they get detatched so reconnect them
-        if reset_devs > 0:
-            self._reconnect()
+            # after resetting the boards they get detatched so reconnect them
+            if reset_devs > 0:
+                self._reconnect(Exception)
 
     def _update_values(self, ch, values, meas_mode):
         """Update set values according to voltage range and external calibration.
@@ -1481,7 +1486,7 @@ class smu:
                         "`pysmu.DeviceError` occurred during `enable_output()`, "
                         + "attempting to reconnect and retry."
                     )
-                    self._reconnect()
+                    self._reconnect(e)
                     continue
 
         if err is not None:
