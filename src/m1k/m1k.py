@@ -375,6 +375,7 @@ class smu:
         # see if device is available to be added to the session
         new_dev = None
         for dev in self._session.available_devices:
+            print(f"connecting serial: {dev.serial}")
             if dev.serial == serial:
                 new_dev = dev
                 break
@@ -556,8 +557,14 @@ class smu:
             # create a new one
             self._session = pysmu.Session(add_all=False)
 
-            # scan for available devices, one or more has probably changed adress
-            self._session.scan()
+            # scan for available devices, one or more has probably changed index.
+            # it takes some time for the scan to detect devices after they get removed
+            # so check several times until the scan can see all boards
+            for i in range(100):
+                if self._session.scan() == len(self._serials):
+                    break
+                else:
+                    time.sleep(0.25)
 
             # add devices to session again
             for serial in self._serials:
