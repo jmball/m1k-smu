@@ -1008,10 +1008,10 @@ class smu:
             dev_channel = self._channel_settings[ch]["dev_channel"]
             mode = self._session.devices[dev_ix].channels[dev_channel].mode
             # only update if reset hasn't already been cached as True
-            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT] and (
-                self._reset_cache[ch] is False
-            ):
+            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
                 self._reset_cache[ch] = True
+            else:
+                self._reset_cache[ch] = False
 
         # build samples list accounting for nplc and settling delay
         # set number of samples requested as maximum of all requested channels
