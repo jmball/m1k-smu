@@ -375,7 +375,6 @@ class smu:
         # see if device is available to be added to the session
         new_dev = None
         for dev in self._session.available_devices:
-            print(f"connecting serial: {dev.serial}")
             if dev.serial == serial:
                 new_dev = dev
                 break

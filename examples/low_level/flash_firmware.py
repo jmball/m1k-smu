@@ -15,9 +15,9 @@ parser.add_argument(
 args = parser.parse_args()
 
 cont = input(
-    "The firmware currently installed on all connected devices is about to be erased "
-    + "and replaced! Make sure you have a backup of the currently installed firmware "
-    + "binary before continuing. Do you wish to continue flashing the firmware? [y/n]"
+    "\nThe firmware currently installed on all connected devices is about to be erased "
+    + "and replaced!\nMake sure you have a backup of the currently installed firmware "
+    + "binary before continuing.\nDo you wish to continue flashing the firmware? [y/n] "
 )
 
 if cont == "y":
