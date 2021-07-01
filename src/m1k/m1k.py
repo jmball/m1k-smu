@@ -408,6 +408,7 @@ class smu:
         self._settling_delay_samples = 0
         self._samples_per_datum = 0
         self._enabled_cache = {}
+        self._reset_cache = {}
 
         channels = list(self.channel_mapping.keys())
 
@@ -420,8 +421,13 @@ class smu:
 
         # update spare channel mode if only 1 in use per board
         for ch in channels:
+            # update caches
+            self._enabled_cache[ch] = False
+            self._reset_cache[ch] = False
+
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
+
             if self.ch_per_board == 1:
                 # if 1 channel per board, other sub_channel is only used for voltage
                 # measurement in four wire mode
@@ -450,8 +456,6 @@ class smu:
 
                 if err is not None:
                     raise err
-
-            self._reset_cache[ch] = False
 
         # ---the order of actions below is critical---
 
