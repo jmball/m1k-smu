@@ -1053,6 +1053,7 @@ class smu:
         # if a sweep has been requested and the output is enabled but in the wrong
         # mode, change it to the correct mode
         if measurement == "sweep":
+            start_modes = {}
             for ch in channels:
                 dev_ix = self._channel_settings[ch]["dev_ix"]
                 dev_channel = self._channel_settings[ch]["dev_channel"]
@@ -1065,7 +1066,7 @@ class smu:
                     # set first voltage of sweep in requested mode
                     self.configure_dc({ch: values[0]}, "i")
                 elif (current_mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]) and (
-                    requested_mode == "V"
+                    requested_mode == "v"
                 ):
                     # set first voltage of sweep in requested mode
                     self.configure_dc({ch: values[0]}, "v")
