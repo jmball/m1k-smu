@@ -465,6 +465,7 @@ class smu:
 
         # cycle outputs to register change and avoid the defualt 2V setting showing
         # on the output on first enable, then leave them all off
+        print("Resetting output...")
         self.enable_output(True)
         self.enable_output(False)
 
@@ -560,7 +561,10 @@ class smu:
             # it takes some time for the scan to detect devices after they get removed
             # so check several times until the scan can see all boards
             for i in range(100):
-                if self._session.scan() == len(self._serials):
+                av = self._session.scan()
+                print(f"Scanned devices: {av}")
+                print(f"Serials: {self._serials}")
+                if av == len(self._serials):
                     break
                 else:
                     time.sleep(0.25)
@@ -996,9 +1000,6 @@ class smu:
         # reset any channels in this request that have been added to the reset cache
         self._reset_boards(channels)
 
-        # update the reset cache
-        self._update_reset_cache()
-
         # build samples list accounting for nplc and settling delay
         # set number of samples requested as maximum of all requested channels
         ch_samples = {}
@@ -1056,7 +1057,7 @@ class smu:
                 if (current_mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]) and (
                     requested_mode == "i"
                 ):
-                    # set first voltage of sweep in requested mode
+                    # set first current of sweep in requested mode
                     self.configure_dc({ch: values[0]}, "i")
                 elif (current_mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]) and (
                     requested_mode == "v"
@@ -1113,6 +1114,9 @@ class smu:
                     requested_mode = self._channel_settings[ch]["sweep_mode"]
                     self.configure_dc({ch: values[-1]}, requested_mode)
 
+        # update the reset cache
+        self._update_reset_cache()
+
         return raw_data, overcurrents, t0
 
     def _reset_boards(self, channels):
@@ -1130,11 +1134,15 @@ class smu:
             if self._reset_cache[ch] is True:
                 reset_channels.append(ch)
 
+        print(f"reset channels: {reset_channels}")
+
         if platform.system() != "Windows":
             # find all unique boards that require resetting
             dev_ixs = set(
                 [self.channel_settings[ch]["dev_ix"] for ch in reset_channels]
             )
+
+            print(f"dev ixs: {dev_ixs}")
 
             # reset boards that require it
             reset_devs = 0
@@ -1149,6 +1157,10 @@ class smu:
                     # the OSError means the command was succesfully processed by the
                     # firmware mod and detached the device
                     reset_devs += 1
+
+            # update reset cache
+            for ch in reset_channels:
+                self._reset_cache[ch] = False
 
             # after resetting the boards they get detatched so reconnect them
             if reset_devs > 0:
@@ -1168,9 +1180,6 @@ class smu:
             mode = self._session.devices[dev_ix].channels[dev_channel].mode
             if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
                 self._reset_cache[ch] = True
-            elif self._reset_cache[ch] is True:
-                # take no action if value is already True
-                pass
             else:
                 self._reset_cache[ch] = False
 
@@ -1531,10 +1540,6 @@ class smu:
             List of channel numbers (0-indexed). If only one channel is required its
             number can be provided as an int. If `None`, apply to all channels.
         """
-        # cache enable setting in case a reconnect is required
-        for ch in channels:
-            self._enabled_cache[ch] = enable
-
         if enable is True:
             # reset any channels in this request that have been added to the reset cache
             self._reset_boards(channels)
@@ -1595,6 +1600,12 @@ class smu:
 
                 # set output mode
                 self._session.devices[dev_ix].channels[dev_ch].mode = mode
+
+        # cache enable setting in case a reconnect is required
+        # this must happen after boards get reset or else the reset gets stuck in
+        # a recursive loop
+        for ch in channels:
+            self._enabled_cache[ch] = enable
 
     def _write_dc_values(self, ch, dev_ix, dev_ch, dc_values, source_mode):
         """Write a DC value to a device sub-channel.
