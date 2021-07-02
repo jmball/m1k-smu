@@ -993,24 +993,11 @@ class smu:
         t0 : float
             Reading start time in s.
         """
-        # reset any channels in this request that were added to the reset cache in the
-        # previous measurement
-        reset_channels = []
-        for ch in channels:
-            if self._reset_cache[ch] is True:
-                reset_channels.append(ch)
-        self._reset_boards(reset_channels)
+        # reset any channels in this request that have been added to the reset cache
+        self._reset_boards(channels)
 
-        # update reset cache for this measurement request
-        for ch in self.channel_mapping.keys():
-            dev_ix = self._channel_settings[ch]["dev_ix"]
-            dev_channel = self._channel_settings[ch]["dev_channel"]
-            mode = self._session.devices[dev_ix].channels[dev_channel].mode
-            # only update if reset hasn't already been cached as True
-            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
-                self._reset_cache[ch] = True
-            else:
-                self._reset_cache[ch] = False
+        # update the reset cache
+        self._update_reset_cache()
 
         # build samples list accounting for nplc and settling delay
         # set number of samples requested as maximum of all requested channels
@@ -1128,16 +1115,21 @@ class smu:
 
         return raw_data, overcurrents, t0
 
-    def _reset_boards(self, reset_channels):
+    def _reset_boards(self, channels):
         """Reset boards to default state.
 
         Requires firmware mod. Cannot be done on Windows.
 
         Parameters
         ----------
-        reset_channels : list
-            List of SMU channels to reset.
+        channels : list
+            List of SMU channels to check.
         """
+        reset_channels = []
+        for ch in channels:
+            if self._reset_cache[ch] is True:
+                reset_channels.append(ch)
+
         if platform.system() != "Windows":
             # find all unique boards that require resetting
             dev_ixs = set(
@@ -1147,18 +1139,40 @@ class smu:
             # reset boards that require it
             reset_devs = 0
             for dev_ix in dev_ixs:
-                # only try to reset devices with modified firmware
-                if self._session.devices[dev_ix].fwver.endswith("-mod"):
-                    dev = self._session.devices[dev_ix]
-                    try:
-                        dev.ctrl_transfer(0x40, 0x26, 0, 0, 0, 0, 100)
-                    except OSError:
-                        pass
+                dev = self._session.devices[dev_ix]
+                try:
+                    # send message to reset
+                    # will only work if board is running firmware board
+                    # other boards will igore the request and it'll pass without error
+                    dev.ctrl_transfer(0x40, 0x26, 0, 0, 0, 0, 100)
+                except OSError:
+                    # the OSError means the command was succesfully processed by the
+                    # firmware mod and detached the device
                     reset_devs += 1
 
             # after resetting the boards they get detatched so reconnect them
             if reset_devs > 0:
                 self._reconnect(Exception)
+
+    def _update_reset_cache(self):
+        """Update the reset cache.
+
+        Whenever a measurement is performed, any channel in high impedance mode
+        needs to be reset before a subsequent measurement if the firmware modification
+        is available. This prevents ~2V showing on the output when subsequently
+        activating SVMI mode.
+        """
+        for ch in self.channel_mapping.keys():
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+            mode = self._session.devices[dev_ix].channels[dev_channel].mode
+            if mode in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                self._reset_cache[ch] = True
+            elif self._reset_cache[ch] is True:
+                # take no action if value is already True
+                pass
+            else:
+                self._reset_cache[ch] = False
 
     def _update_values(self, ch, values, meas_mode):
         """Update set values according to voltage range and external calibration.
@@ -1522,6 +1536,9 @@ class smu:
             self._enabled_cache[ch] = enable
 
         if enable is True:
+            # reset any channels in this request that have been added to the reset cache
+            self._reset_boards(channels)
+
             for ch in channels:
                 dev_ix = self._channel_settings[ch]["dev_ix"]
                 dev_ch = self._channel_settings[ch]["dev_channel"]
@@ -1537,6 +1554,13 @@ class smu:
 
                 # update output
                 self._write_dc_values(ch, dev_ix, dev_ch, dc_values, source_mode)
+
+            # run non-blocking measurement to update all output values
+            self._session.start(1)
+            self._session.read(1, self.read_timeout)
+
+            # update reset cache
+            self._update_reset_cache()
         else:
             # disable channels
             for ch in channels:
@@ -1610,10 +1634,6 @@ class smu:
 
         # set output mode
         self._session.devices[dev_ix].channels[dev_ch].mode = mode
-
-        # run non-blocking measurement to update output value
-        self._session.start(1)
-        self._session.read(1, self.read_timeout)
 
     def _write_dac_value(self, dev_ix, dev_ch, dc_value, source_mode):
         """Write a value directly to the DAC.
