@@ -577,8 +577,12 @@ class smu:
             self._map_boards()
 
             # attempt to re-enable outputs according to cache
+            chs = []
             for ch, enable in self._enabled_cache.items():
-                self.enable_output(enable, ch)
+                if enable is True:
+                    chs.append(ch)
+            print(f"re-enabling channels: {chs}")
+            self.enable_output(True, chs)
 
     def disconnect(self):
         """Disconnect all devices from the session.
@@ -1560,9 +1564,10 @@ class smu:
                 # update output
                 self._write_dc_values(ch, dev_ix, dev_ch, dc_values, source_mode)
 
-            # run non-blocking measurement to update all output values
-            self._session.start(1)
-            self._session.read(1, self.read_timeout)
+            if len(channels) > 0:
+                # run non-blocking measurement to update all output values
+                self._session.start(1)
+                self._session.read(1, self.read_timeout)
 
             # update reset cache
             self._update_reset_cache()
