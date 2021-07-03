@@ -415,16 +415,39 @@ class smu:
         # init with default settings
         for ch in channels:
             self._configure_channel_default_settings(ch)
+            self._enabled_cache[ch] = False
 
         # get board mapping
         self._map_boards()
 
-        # update spare channel mode if only 1 in use per board
+        # hard reset boards
         for ch in channels:
-            # update caches
-            self._enabled_cache[ch] = False
-            self._reset_cache[ch] = False
+            self._reset_cache[ch] = True
+        self._reset_boards(channels)
 
+        # update spare channel mode if only 1 in use per board
+        self._update_spare_channel()
+
+        # ---the order of actions below is critical---
+
+        # set default output value
+        # this will reset all channel outputs to 0 V
+        self.configure_dc(values=0, source_mode="v")
+
+        # cycle outputs to register change and avoid the defualt 2V setting showing
+        # on the output on first enable, then leave them all off
+        self.enable_output(True)
+        self.enable_output(False)
+
+        # init global settings
+        # depends on session being created and device being connected and a
+        # measurement having been performed to properly init sample rate
+        self.nplc = 0.1
+        self.settling_delay = 0.005
+
+    def _update_spare_channel(self):
+        """Update spare channel mode if only 1 in use per board."""
+        for ch in self.channel_mapping.keys():
             dev_ix = self._channel_settings[ch]["dev_ix"]
             dev_channel = self._channel_settings[ch]["dev_channel"]
 
@@ -456,24 +479,6 @@ class smu:
 
                 if err is not None:
                     raise err
-
-        # ---the order of actions below is critical---
-
-        # set default output value
-        # this will reset all channel outputs to 0 V
-        self.configure_dc(values=0, source_mode="v")
-
-        # cycle outputs to register change and avoid the defualt 2V setting showing
-        # on the output on first enable, then leave them all off
-        print("Resetting output...")
-        self.enable_output(True)
-        self.enable_output(False)
-
-        # init global settings
-        # depends on session being created and device being connected and a
-        # measurement having been performed to properly init sample rate
-        self.nplc = 0.1
-        self.settling_delay = 0.005
 
     def _map_boards(self):
         """Map boards to channels in channel settings."""
@@ -562,12 +567,14 @@ class smu:
             # so check several times until the scan can see all boards
             for i in range(100):
                 av = self._session.scan()
-                print(f"Scanned devices: {av}")
-                print(f"Serials: {self._serials}")
                 if av == len(self._serials):
                     break
                 else:
                     time.sleep(0.25)
+            if i == 99:
+                raise RuntimeError(
+                    "Counld not find all devices in channel map during reconnect."
+                )
 
             # add devices to session again
             for serial in self._serials:
@@ -575,6 +582,9 @@ class smu:
 
             # update board mapping
             self._map_boards()
+
+            # update spare channel mode if only 1 in use per board
+            self._update_spare_channel()
 
             # attempt to re-enable outputs according to cache
             enable_chs = []
@@ -584,7 +594,6 @@ class smu:
                     enable_chs.append(ch)
                 else:
                     disable_chs.append(ch)
-            print(f"re-enabling channels: {enable_chs}")
             self.enable_output(True, enable_chs)
 
             # run disable method to ensure LEDs are set properly
@@ -597,6 +606,12 @@ class smu:
         so is forbidden.
         """
         if self._session is not None:
+            # hard reset boards
+            channels = list(self.channel_mapping.keys())
+            for ch in channels:
+                self._reset_cache[ch] = True
+            self._reset_boards(channels)
+
             # disable outputs and reset LEDs
             self.enable_output(False)
             self.set_leds(R=True)
@@ -1144,15 +1159,11 @@ class smu:
             if self._reset_cache[ch] is True:
                 reset_channels.append(ch)
 
-        print(f"reset channels: {reset_channels}")
-
         if platform.system() != "Windows":
             # find all unique boards that require resetting
             dev_ixs = set(
                 [self.channel_settings[ch]["dev_ix"] for ch in reset_channels]
             )
-
-            print(f"dev ixs: {dev_ixs}")
 
             # reset boards that require it
             reset_devs = 0
@@ -1550,7 +1561,7 @@ class smu:
             List of channel numbers (0-indexed). If only one channel is required its
             number can be provided as an int. If `None`, apply to all channels.
         """
-        if enable is True:
+        if (enable is True) and (len(channels) > 0):
             # reset any channels in this request that have been added to the reset cache
             self._reset_boards(channels)
 
@@ -1570,10 +1581,9 @@ class smu:
                 # update output
                 self._write_dc_values(ch, dev_ix, dev_ch, dc_values, source_mode)
 
-            if len(channels) > 0:
-                # run non-blocking measurement to update all output values
-                self._session.start(1)
-                self._session.read(1, self.read_timeout)
+            # run non-blocking measurement to update all output values
+            self._session.start(1)
+            self._session.read(1, self.read_timeout)
 
             # update reset cache
             self._update_reset_cache()
