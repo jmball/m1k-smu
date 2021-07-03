@@ -577,12 +577,18 @@ class smu:
             self._map_boards()
 
             # attempt to re-enable outputs according to cache
-            chs = []
+            enable_chs = []
+            disable_chs = []
             for ch, enable in self._enabled_cache.items():
                 if enable is True:
-                    chs.append(ch)
-            print(f"re-enabling channels: {chs}")
-            self.enable_output(True, chs)
+                    enable_chs.append(ch)
+                else:
+                    disable_chs.append(ch)
+            print(f"re-enabling channels: {enable_chs}")
+            self.enable_output(True, enable_chs)
+
+            # run disable method to ensure LEDs are set properly
+            self.enable_output(False, enable_chs)
 
     def disconnect(self):
         """Disconnect all devices from the session.
