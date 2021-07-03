@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "--path",
     type=str,
-    default="",
+    default="m1000.bin",
     help="Path to firmware binary",
 )
 args = parser.parse_args()
