@@ -1374,17 +1374,19 @@ class smu:
                     )
             elif self.ch_per_board == 2:
                 # derive list of boards from channels
-                boards = set([int(ch / 2) for ch in channels])
-                for board in boards:
-                    dev_ix = self._channel_settings[2 * board]["dev_ix"]
-                    dev_channel = self._channel_settings[2 * board]["dev_channel"]
+                for ch in channels:
+                    dev_ix = self._channel_settings[ch]["dev_ix"]
+                    dev_channel = self._channel_settings[ch]["dev_channel"]
                     # start indices for each measurement value
                     start_ixs = range(0, len(chunk[dev_ix]), self._samples_per_datum)
 
-                    A_voltages = []
-                    B_voltages = []
-                    A_currents = []
-                    B_currents = []
+                    if dev_channel == "A":
+                        dev_channel_num = 0
+                    else:
+                        dev_channel_num = 1
+
+                    voltages = []
+                    currents = []
                     timestamps = []
                     for i in start_ixs:
                         # final point can overlap with start of next voltage so cut it
@@ -1401,104 +1403,57 @@ class smu:
                         )
 
                         # pick out and process useful data
-                        A_point_voltages = []
-                        B_point_voltages = []
-                        A_point_currents = []
-                        B_point_currents = []
+                        point_voltages = []
+                        point_currents = []
                         for row in data_slice:
-                            A_point_voltages.append(row[0][0])
-                            B_point_voltages.append(row[1][0])
-                            A_point_currents.append(row[0][1])
-                            B_point_currents.append(row[1][1])
+                            point_voltages.append(row[dev_channel_num][0])
+                            point_currents.append(row[dev_channel_num][1])
 
-                        A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
-                        B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
-                        A_currents.append(sum(A_point_currents) / len(A_point_currents))
-                        B_currents.append(sum(B_point_currents) / len(B_point_currents))
+                        voltages.append(sum(point_voltages) / len(point_voltages))
+                        currents.append(sum(point_currents) / len(point_currents))
 
                     # update measured values according to external calibration
-                    A_cal_mode = self._channel_settings[2 * board]["calibration_mode"]
-                    B_cal_mode = self._channel_settings[2 * board + 1][
-                        "calibration_mode"
-                    ]
+                    cal_mode = self._channel_settings[ch]["calibration_mode"]
 
                     # get source mode to determine how to look up external cal
                     mode = self._session.devices[dev_ix].channels[dev_channel].mode
 
                     # apply external calibration if required
-                    if (A_cal_mode == "external") and (2 * board in channels):
-                        A_cal = self._channel_settings[2 * board][
-                            "external_calibration"
-                        ]["A"]
+                    if cal_mode == "external":
+                        cal = self._channel_settings[ch]["external_calibration"][
+                            dev_channel
+                        ]
 
                         if mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]:
-                            f_int_mva = A_cal["source_v"]["meas"]
-                            f_int_mia = A_cal["meas_i"]
+                            f_int_mv = cal["source_v"]["meas"]
+                            f_int_mi = cal["meas_i"]
                         elif mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]:
-                            f_int_mva = A_cal["meas_v"]
-                            f_int_mia = A_cal["source_i"]["meas"]
+                            f_int_mv = cal["meas_v"]
+                            f_int_mi = cal["source_i"]["meas"]
                         else:
                             # HI_Z or HI_Z_SPLIT mode
-                            f_int_mva = A_cal["meas_v"]
-                            f_int_mia = A_cal["meas_i"]
+                            f_int_mv = cal["meas_v"]
+                            f_int_mi = cal["meas_i"]
 
-                        A_voltages = f_int_mva(A_voltages).tolist()
-                        A_currents = f_int_mia(A_currents).tolist()
-
-                    if (B_cal_mode == "external") and (2 * board + 1 in channels):
-                        B_cal = self._channel_settings[2 * board + 1][
-                            "external_calibration"
-                        ]["B"]
-
-                        if mode in [pysmu.Mode.SVMI, pysmu.Mode.SVMI_SPLIT]:
-                            f_int_mvb = B_cal["source_v"]["meas"]
-                            f_int_mib = B_cal["meas_i"]
-                        elif mode in [pysmu.Mode.SIMV, pysmu.Mode.SIMV_SPLIT]:
-                            f_int_mvb = B_cal["meas_v"]
-                            f_int_mib = B_cal["source_i"]["meas"]
-                        else:
-                            # HI_Z or HI_Z_SPLIT mode
-                            f_int_mvb = B_cal["meas_v"]
-                            f_int_mib = B_cal["meas_i"]
-
-                        B_voltages = f_int_mvb(B_voltages).tolist()
-                        B_currents = f_int_mib(B_currents).tolist()
+                        voltages = f_int_mv(voltages).tolist()
+                        currents = f_int_mi(currents).tolist()
 
                     # set status: 0=ok, 1=i>i_theshold, 2=overcurrent (overload on
                     # board input power)
-                    if 2 * board in channels:
-                        if channel_overcurrents[2 * board] is True:
-                            A_statuses = [2 for i in A_currents]
-                        else:
-                            A_statuses = [
-                                0 if abs(i) <= self.i_threshold else 1
-                                for i in A_currents
-                            ]
-                        processed_data[2 * board].extend(
-                            [
-                                (v, i, t, s)
-                                for v, i, t, s in zip(
-                                    A_voltages, A_currents, timestamps, A_statuses
-                                )
-                            ]
-                        )
-
-                    if 2 * board + 1 in channels:
-                        if channel_overcurrents[2 * board + 1] is True:
-                            B_statuses = [2 for i in B_currents]
-                        else:
-                            B_statuses = [
-                                0 if abs(i) <= self.i_threshold else 1
-                                for i in B_currents
-                            ]
-                        processed_data[2 * board + 1].extend(
-                            [
-                                (v, i, t, s)
-                                for v, i, t, s in zip(
-                                    B_voltages, B_currents, timestamps, B_statuses
-                                )
-                            ]
-                        )
+                    if channel_overcurrents[ch] is True:
+                        statuses = [2 for i in currents]
+                    else:
+                        statuses = [
+                            0 if abs(i) <= self.i_threshold else 1 for i in currents
+                        ]
+                    processed_data[ch].extend(
+                        [
+                            (v, i, t, s)
+                            for v, i, t, s in zip(
+                                voltages, currents, timestamps, statuses
+                            )
+                        ]
+                    )
 
             cumulative_chunk_lengths += len(chunk)
 
