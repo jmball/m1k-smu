@@ -152,7 +152,7 @@ def worker(smu):
 
         with conn:
             # read incoming message
-            with conn.makefile('r', newline=TERMCHAR) as cf:
+            with conn.makefile("r", newline=TERMCHAR) as cf:
                 msg = cf.readline().rstrip(TERMCHAR)
 
             print(f"Message received: {msg}")
@@ -280,13 +280,12 @@ def worker(smu):
                     resp = "ERROR: invalid message."
             elif msg_split[0] == "meas":
                 if len(msg_split) == 4:
-                    resp = str(
-                        smu.measure(
-                            ast.literal_eval(msg_split[1]),
-                            msg_split[2],
-                            bool(int(msg_split[3])),
-                        )
+                    data = smu.measure(
+                        ast.literal_eval(msg_split[1]),
+                        msg_split[2],
+                        bool(int(msg_split[3])),
                     )
+                    resp = str(data)
                 else:
                     resp = "ERROR: invalid message."
             elif msg_split[0] == "eo":
@@ -310,6 +309,7 @@ def worker(smu):
                 resp = "ERROR: invalid message."
 
             # send response
+            print(f"Response: {resp}")
             conn.sendall(resp.encode() + TERMCHAR_BYTES)
 
         q.task_done()
@@ -317,6 +317,7 @@ def worker(smu):
 
 # a global flag for keeping track if an exception has occured in the worker thread
 worker_crashed = threading.Event()
+
 
 def worker_thread_exception_handler(args):
     # set the flag indicating that the worker thread is toast
@@ -327,7 +328,8 @@ def worker_thread_exception_handler(args):
     # show the user what killed the worker thread
     traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
 
-    #raise(ValueError("The worker thread crashed! (see above for traceback)"))
+    # raise(ValueError("The worker thread crashed! (see above for traceback)"))
+
 
 threading.excepthook = worker_thread_exception_handler
 
@@ -363,7 +365,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 pass
             else:
                 # non-timeout exceptions for accept() are not cool
-                raise(e)
+                raise (e)
         else:  # there was no exception
             if worker_thread.is_alive() and not worker_crashed.is_set():
                 # only deliver the connection to the worker if it is not dead or dying
