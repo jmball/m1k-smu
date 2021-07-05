@@ -565,14 +565,14 @@ class smu:
             # scan for available devices, one or more has probably changed index.
             # it takes some time for the scan to detect devices after they get removed
             # so check several times until the scan can see all boards
-            time.sleep(1)
-            for i in range(100):
+            all_found = False
+            for _ in range(10):
+                time.sleep(1)
                 av = self._session.scan()
                 if av == len(self._serials):
+                    all_found = True
                     break
-                else:
-                    time.sleep(0.25)
-            if i == 99:
+            if all_found is False:
                 raise RuntimeError(
                     "Counld not find all devices in channel map during reconnect. "
                     + f"Found {av} devices."
@@ -973,6 +973,17 @@ class smu:
                     warnings.warn(
                         "`pysmu.DeviceError` occurred during `measure()`, attempting "
                         + "to reconnect and retry."
+                    )
+                    self._reconnect(e)
+                    continue
+            except ZeroDivisionError as e:
+                if attempt == self._retries:
+                    err = e
+                else:
+                    warnings.warn(
+                        "`ZeroDivisionError` occurred during `measure()`. A device "
+                        + "probably didn't return data. Attempting to reconnect and "
+                        + "retry."
                     )
                     self._reconnect(e)
                     continue
@@ -1507,6 +1518,16 @@ class smu:
                     warnings.warn(
                         "`pysmu.DeviceError` occurred during `enable_output()`, "
                         + "attempting to reconnect and retry."
+                    )
+                    self._reconnect(e)
+                    continue
+            except pysmu.SessionError as e:
+                if attempt == self._retries:
+                    err = e
+                else:
+                    warnings.warn(
+                        "`pysmu.SessionError` occurred during `measure()`, attempting "
+                        + "to reconnect and retry."
                     )
                     self._reconnect(e)
                     continue
