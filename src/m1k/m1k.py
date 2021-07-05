@@ -573,7 +573,8 @@ class smu:
                     time.sleep(0.25)
             if i == 99:
                 raise RuntimeError(
-                    "Counld not find all devices in channel map during reconnect."
+                    "Counld not find all devices in channel map during reconnect. "
+                    + f"Found {self._session.scan()} devices."
                 )
 
             # add devices to session again
