@@ -955,6 +955,12 @@ class smu:
                 raw_data, overcurrents, t0, t1 = self._measure(
                     channels, measurement, allow_chunking
                 )
+
+                # re-format raw data to: (voltage, current, timestamp, status)
+                # and process to account for nplc and settling delay if required
+                processed_data = self._process_data(
+                    raw_data, channels, measurement, overcurrents, t0, t1
+                )
                 break
             except pysmu.SessionError as e:
                 if attempt == self._retries:
@@ -990,12 +996,6 @@ class smu:
 
         if err is not None:
             raise err
-
-        # re-format raw data to: (voltage, current, timestamp, status)
-        # and process to account for nplc and settling delay if required
-        processed_data = self._process_data(
-            raw_data, channels, measurement, overcurrents, t0, t1
-        )
 
         # return processed_data
         return processed_data
