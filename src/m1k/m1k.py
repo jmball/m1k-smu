@@ -952,7 +952,7 @@ class smu:
         err = None
         for attempt in range(1, self._retries + 1):
             try:
-                raw_data, overcurrents, t0 = self._measure(
+                raw_data, overcurrents, t0, t1 = self._measure(
                     channels, measurement, allow_chunking
                 )
                 break
@@ -994,7 +994,7 @@ class smu:
         # re-format raw data to: (voltage, current, timestamp, status)
         # and process to account for nplc and settling delay if required
         processed_data = self._process_data(
-            raw_data, channels, measurement, overcurrents, t0
+            raw_data, channels, measurement, overcurrents, t0, t1
         )
 
         # return processed_data
@@ -1149,6 +1149,7 @@ class smu:
             for ch in channels:
                 chunk_overcurrents[ch] = self._session.devices[dev_ix].overcurrent
             overcurrents.append(chunk_overcurrents)
+        t1 = time.time()
 
         # disable/enable outputs as required
         for ch in channels:
@@ -1164,7 +1165,7 @@ class smu:
         # update the reset cache
         self._update_reset_cache()
 
-        return raw_data, overcurrents, t0
+        return raw_data, overcurrents, t0, t1
 
     def _reset_boards(self, channels):
         """Reset boards to default state.
@@ -1261,7 +1262,7 @@ class smu:
 
         return values
 
-    def _process_data(self, raw_data, channels, measurement, overcurrents, t0):
+    def _process_data(self, raw_data, channels, measurement, overcurrents, t0, t1):
         """Process raw data accounting for NPLC and settling delay.
 
         Parameters
@@ -1277,6 +1278,8 @@ class smu:
             List of channel overcurrent statuses for each chunk.
         t0 : float
             Timestamp representing start time (s).
+        t1 : float
+            Timestamp representing end time (s)..
 
         Returns
         -------
@@ -1319,12 +1322,17 @@ class smu:
                         data_slice = data_slice[self._settling_delay_samples :]
 
                         # approximate datum timestamp, doesn't account for chunking
-                        timestamps.append(
-                            t0
-                            + (cumulative_chunk_lengths + i)
-                            * t_delta
-                            * self._samples_per_datum
-                        )
+                        # timestamps.append(
+                        #     t0
+                        #     + (cumulative_chunk_lengths + i)
+                        #     * t_delta
+                        #     * self._samples_per_datum
+                        # )
+                        # don't estimate timestamps for sweeps, just store start value
+                        if cumulative_chunk_lengths + i == 0:
+                            timestamps.append(t0)
+                        else:
+                            timestamps.append(float("nan"))
 
                         # pick out and process useful data
                         A_point_voltages = []
@@ -1385,7 +1393,6 @@ class smu:
                         statuses = [
                             0 if abs(i) <= self.i_threshold else 1 for i in currents
                         ]
-
                     processed_data[ch].extend(
                         [
                             (v, i, t, s)
@@ -1417,12 +1424,17 @@ class smu:
                         data_slice = data_slice[self._settling_delay_samples :]
 
                         # approximate datum timestamp, doesn't account for chunking
-                        timestamps.append(
-                            t0
-                            + (cumulative_chunk_lengths + i)
-                            * t_delta
-                            * self._samples_per_datum
-                        )
+                        # timestamps.append(
+                        #     t0
+                        #     + (cumulative_chunk_lengths + i)
+                        #     * t_delta
+                        #     * self._samples_per_datum
+                        # )
+                        # don't estimate timestamps for sweeps, just store start value
+                        if cumulative_chunk_lengths + i == 0:
+                            timestamps.append(t0)
+                        else:
+                            timestamps.append(float("nan"))
 
                         # pick out and process useful data
                         point_voltages = []
@@ -1484,6 +1496,13 @@ class smu:
             for ch in channels:
                 values = self._channel_settings[ch]["sweep_values"]
                 processed_data[ch] = processed_data[ch][: len(values)]
+
+        # set last time to t1 if more than one value measured
+        for ch in list(processed_data.keys()):
+            if len(processed_data[ch]) > 1:
+                last_row = list(processed_data[ch][-1])
+                last_row[2] = t1
+                processed_data[ch][-1] = tuple(last_row)
 
         return processed_data
 
