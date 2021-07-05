@@ -3,15 +3,14 @@
 import ast
 import os
 import pathlib
-import queue
 import socket
-import threading
 import warnings
 import sys
 
 import yaml
 import pprint
-import traceback
+
+from yaml.loader import FullLoader, SafeLoader
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
@@ -21,6 +20,7 @@ PORT = 20101
 TERMCHAR = "\n"
 TERMCHAR_BYTES = TERMCHAR.encode()
 COMMS_TIMEOUT = 10  # in seconds
+CACHE_PATH = pathlib.Path("cache.yaml")
 
 pp = pprint.PrettyPrinter(indent=2)
 
@@ -53,7 +53,7 @@ def stringify_nonnative_dict_values(d):
     return d
 
 
-def worker(smu, conn, addr):
+def worker(smu, conn):
     """Handle messages.
 
     Parameters
@@ -293,6 +293,22 @@ pp.pprint(channel_mapping)
 smu = m1k.smu(**init_args)
 smu.connect(channel_mapping)
 
+# attrempt to reload attributes from cache
+if CACHE_PATH.exists() is True:
+    # load cache
+    with open(CACHE_PATH, "r") as f:
+        cache = yaml.load(f, Loader=SafeLoader)
+
+    # update attributes from loaded cache
+    for name, value in cache.items():
+        setattr(smu, name, value)
+
+    # re-enable outputs according to cache
+    smu._reenable_outputs()
+
+    # delete the cache
+    CACHE_PATH.unlink()
+
 # load calibration data
 if cal_data_folder is not None:
     cal_data = {}
@@ -341,5 +357,19 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 # non-timeout exceptions for accept() are not cool
                 raise (e)
         else:
-            # service request
-            worker(smu, conn, address)
+            try:
+                # service request
+                worker(smu, conn)
+            except Exception as e:
+                # build dictionary of smu object attributes that are native types
+                cache = {}
+                for name, value in smu.__dict__.items():
+                    if type(value) in [str, int, float, list, dict, tuple, bool]:
+                        cache[name] = value
+
+                # dump attributes to file to read back on relaunch
+                with open(CACHE_PATH, "w") as f:
+                    yaml.dump(cache, f)
+
+                # re-raise the error
+                raise e

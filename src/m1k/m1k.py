@@ -589,17 +589,21 @@ class smu:
             self._update_spare_channel()
 
             # attempt to re-enable outputs according to cache
-            enable_chs = []
-            disable_chs = []
-            for ch, enable in self._enabled_cache.items():
-                if enable is True:
-                    enable_chs.append(ch)
-                else:
-                    disable_chs.append(ch)
-            self.enable_output(True, enable_chs)
+            self._reenable_outputs()
 
-            # run disable method to ensure LEDs are set properly
-            self.enable_output(False, enable_chs)
+    def _reenable_outputs(self):
+        """Re-enable outputs according to enable cache."""
+        enable_chs = []
+        disable_chs = []
+        for ch, enable in self._enabled_cache.items():
+            if enable is True:
+                enable_chs.append(ch)
+            else:
+                disable_chs.append(ch)
+        self.enable_output(True, enable_chs)
+
+        # run disable method to ensure LEDs are set properly
+        self.enable_output(False, enable_chs)
 
     def disconnect(self):
         """Disconnect all devices from the session.
