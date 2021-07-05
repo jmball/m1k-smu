@@ -565,6 +565,7 @@ class smu:
             # scan for available devices, one or more has probably changed index.
             # it takes some time for the scan to detect devices after they get removed
             # so check several times until the scan can see all boards
+            time.sleep(1)
             for i in range(100):
                 av = self._session.scan()
                 if av == len(self._serials):
@@ -574,7 +575,7 @@ class smu:
             if i == 99:
                 raise RuntimeError(
                     "Counld not find all devices in channel map during reconnect. "
-                    + f"Found {self._session.scan()} devices."
+                    + f"Found {av} devices."
                 )
 
             # add devices to session again
@@ -1024,7 +1025,16 @@ class smu:
             Reading start time in s.
         """
         # reset any channels in this request that have been added to the reset cache
-        self._reset_boards(channels)
+        # and are now not in high impedance mode
+        non_hi_z_chs = []
+        for ch in channels:
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+            mode = self._session.devices[dev_ix].channels[dev_channel].mode
+            if mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                non_hi_z_chs.append(ch)
+        if len(non_hi_z_chs) > 0:
+            self._reset_boards(channels)
 
         # build samples list accounting for nplc and settling delay
         # set number of samples requested as maximum of all requested channels
