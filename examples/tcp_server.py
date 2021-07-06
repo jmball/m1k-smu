@@ -132,6 +132,8 @@ def worker(smu, conn):
                 smu.invert_channels(bool(int(msg_split[1])))
             else:
                 resp = "ERROR: invalid message."
+        elif msg == "rstc":
+            resp = str(smu._reset_cache)
         elif msg_split[0] == "cal":
             if len(msg_split) == 3:
                 if msg_split[1] == "ext":
