@@ -10,8 +10,6 @@ import sys
 import yaml
 import pprint
 
-from yaml.loader import FullLoader, SafeLoader
-
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
 
@@ -291,28 +289,6 @@ else:
 print("Channel Mapping:")
 pp.pprint(channel_mapping)
 
-# init smu
-smu = m1k.smu(**init_args)
-smu.connect(channel_mapping)
-
-# attrempt to reload attributes from cache
-if CACHE_PATH.exists() is True:
-    print("Reloading settings after crash.")
-
-    # load cache
-    with open(CACHE_PATH, "r") as f:
-        cache = yaml.load(f, Loader=SafeLoader)
-
-    # update attributes from loaded cache
-    for name, value in cache.items():
-        setattr(smu, name, value)
-
-    # re-enable outputs according to cache
-    smu._reenable_outputs()
-
-    # delete the cache
-    CACHE_PATH.unlink()
-
 # load calibration data
 if cal_data_folder is not None:
     cal_data = {}
@@ -337,6 +313,36 @@ if cal_data_folder is not None:
             cal_data[2 * board + 1] = data
 else:
     cal_data = {}
+
+# init smu
+smu = m1k.smu(**init_args)
+smu.connect(channel_mapping)
+
+# attrempt to reload attributes from cache
+if CACHE_PATH.exists() is True:
+    print("Reloading settings after crash.")
+
+    try:
+        # load cache
+        with open(CACHE_PATH, "r") as f:
+            cache = yaml.load(f, Loader=yaml.SafeLoader)
+
+        # update attributes from loaded cache
+        for name, value in cache.items():
+            setattr(smu, name, value)
+
+        # recreate external calibration interpolation objects if required
+        for ch, data in cal_data.items():
+            if smu.channel_settings[ch]["calibration_mode"] == "external":
+                smu.use_external_calibration(ch, data)
+
+        # re-enable outputs according to cache
+        smu._reenable_outputs()
+    except yaml.constructor.ConstructorError:
+        warnings.warn("Invalid cache, could not reload settings.")
+
+    # delete the cache
+    CACHE_PATH.unlink()
 
 # start server
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -369,6 +375,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 cache = {}
                 for name, value in smu.__dict__.items():
                     if type(value) in [str, int, float, list, dict, tuple, bool]:
+                        if type(value) is dict:
+                            value = stringify_nonnative_dict_values(value)
                         cache[name] = value
 
                 # dump attributes to file to read back on relaunch
