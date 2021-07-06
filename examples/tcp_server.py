@@ -297,6 +297,8 @@ smu.connect(channel_mapping)
 
 # attrempt to reload attributes from cache
 if CACHE_PATH.exists() is True:
+    print("Reloading settings after crash.")
+
     # load cache
     with open(CACHE_PATH, "r") as f:
         cache = yaml.load(f, Loader=SafeLoader)
