@@ -1336,7 +1336,7 @@ class smu:
                         if cumulative_chunk_lengths + i == 0:
                             timestamps.append(t0)
                         else:
-                            timestamps.append(float("nan"))
+                            timestamps.append("nan")
 
                         # pick out and process useful data
                         A_point_voltages = []
@@ -1438,7 +1438,7 @@ class smu:
                         if cumulative_chunk_lengths + i == 0:
                             timestamps.append(t0)
                         else:
-                            timestamps.append(float("nan"))
+                            timestamps.append("nan")
 
                         # pick out and process useful data
                         point_voltages = []
