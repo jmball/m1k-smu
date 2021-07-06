@@ -548,14 +548,8 @@ class smu:
             if err is not None:
                 raise err
         else:
-            # remove all devices from the session
-            for dev in self._session.devices:
-                try:
-                    self._session.remove(dev)
-                except pysmu.SessionError:
-                    self._session.remove(dev, True)
-
             # destroy the session
+            self._session._close()
             del self._session
             self._session = None
 
@@ -622,17 +616,11 @@ class smu:
             self.enable_output(False)
             self.set_leds(R=True)
 
-            # remove devices from session
-            for dev in self._session.devices:
-                try:
-                    self._session.remove(dev)
-                except pysmu.SessionError:
-                    self._session.remove(dev, True)
-
             # reset channel settings
             self._channel_settings = {}
 
             # destroy the session
+            self._session._close()
             del self._session
             self._session = None
 
