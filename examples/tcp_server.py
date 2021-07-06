@@ -289,6 +289,10 @@ else:
 print("Channel Mapping:")
 pp.pprint(channel_mapping)
 
+# init smu
+smu = m1k.smu(**init_args)
+smu.connect(channel_mapping)
+
 # load calibration data
 if cal_data_folder is not None:
     cal_data = {}
@@ -313,10 +317,6 @@ if cal_data_folder is not None:
             cal_data[2 * board + 1] = data
 else:
     cal_data = {}
-
-# init smu
-smu = m1k.smu(**init_args)
-smu.connect(channel_mapping)
 
 # attrempt to reload attributes from cache
 if CACHE_PATH.exists() is True:
