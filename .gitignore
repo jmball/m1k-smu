@@ -135,3 +135,5 @@ examples/data/
 examples/board_mapping.yaml
 examples/ch_per_board.yaml
 examples/config.yaml
+
+src/test.py
