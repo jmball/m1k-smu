@@ -339,7 +339,7 @@ if CACHE_PATH.exists() is True:
         # re-enable outputs according to cache
         smu._reenable_outputs()
     except yaml.constructor.ConstructorError:
-        warnings.warn("Invalid cache, could not reload settings.")
+        warnings.warn("Invalid cache, could not reload state prior to crash!")
 
     # delete the cache
     CACHE_PATH.unlink()
