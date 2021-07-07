@@ -3,6 +3,7 @@
 import math
 import platform
 import time
+from typing import ValuesView
 import warnings
 
 import pysmu
@@ -1144,6 +1145,56 @@ class smu:
         self._update_reset_cache()
 
         return raw_data, overcurrents, t0
+
+    def _low_level_voltage_sweep(self, start, stop, points):
+        """Perform a voltage sweep and return full buffer.
+
+        Parameters
+        ----------
+        start : float
+            Start voltage in V.
+        stop : float
+            Stop voltage in V.
+        points : int
+            Number of points in sweep.
+
+        Returns
+        -------
+        raw_data : dict
+            Raw data dictionary containing full data buffers.
+        """
+        step = (stop - start) / (points - 1)
+        sweep = [x * step + start for x in range(points)]
+
+        samples = []
+        for value in sweep:
+            samples += [value] * self._samples_per_datum
+
+        if len(samples) > self.maximum_buffer_size:
+            raise ValueError(
+                "Cannot fit sweep in buffer. Reduce NPLC, settling delay, and/or "
+                + "number of samples."
+            )
+
+        for ch in self.channel_mapping.keys():
+            dev_ix = self.channel_settings[ch]["dev_ix"]
+            dev_channel = self.channel_settings[ch]["dev_channel"]
+            self._session.devices[dev_ix].channels[dev_channel].write(samples)
+
+        self._session.start(len(samples))
+        data = self._session.run(len(samples), self.read_timeout)
+
+        data_dict = {}
+        for ch in self.channel_mapping.keys():
+            dev_ix = self.channel_settings[ch]["dev_ix"]
+            dev_channel = self.channel_settings[ch]["dev_channel"]
+            if dev_channel == "A":
+                dev_channel_num = 0
+            else:
+                dev_channel_num = 1
+            data_dict[ch] = data[dev_ix][dev_channel_num]
+
+        return data_dict
 
     def _reset_boards(self, channels):
         """Reset boards to default state.
