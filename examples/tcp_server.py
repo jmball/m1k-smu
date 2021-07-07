@@ -222,6 +222,16 @@ def worker(smu, conn):
                 )
             else:
                 resp = "ERROR: invalid message."
+        elif msg_split[0] == "llvs":
+            if len(msg_split) == 4:
+                data = smu._low_level_voltage_sweep(
+                    float(msg_split[1]),
+                    float(msg_split[2]),
+                    int(msg_split[3]),
+                )
+                resp = str(data)
+            else:
+                resp = "ERROR: invalid message."
         else:
             resp = "ERROR: invalid message."
 
