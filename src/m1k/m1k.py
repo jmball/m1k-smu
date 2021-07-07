@@ -549,14 +549,8 @@ class smu:
             if err is not None:
                 raise err
         else:
-            # remove all devices from the session
-            for dev in self._session.devices:
-                try:
-                    self._session.remove(dev)
-                except pysmu.SessionError:
-                    self._session.remove(dev, True)
-
             # destroy the session
+            self._session._close()
             del self._session
             self._session = None
 
@@ -566,16 +560,17 @@ class smu:
             # scan for available devices, one or more has probably changed index.
             # it takes some time for the scan to detect devices after they get removed
             # so check several times until the scan can see all boards
-            for i in range(100):
+            all_found = False
+            for _ in range(10):
+                time.sleep(1)
                 av = self._session.scan()
                 if av == len(self._serials):
+                    all_found = True
                     break
-                else:
-                    time.sleep(0.25)
-            if i == 99:
+            if all_found is False:
                 raise RuntimeError(
                     "Counld not find all devices in channel map during reconnect. "
-                    + f"Found {self._session.scan()} devices."
+                    + f"Found {av} devices."
                 )
 
             # add devices to session again
@@ -589,17 +584,21 @@ class smu:
             self._update_spare_channel()
 
             # attempt to re-enable outputs according to cache
-            enable_chs = []
-            disable_chs = []
-            for ch, enable in self._enabled_cache.items():
-                if enable is True:
-                    enable_chs.append(ch)
-                else:
-                    disable_chs.append(ch)
-            self.enable_output(True, enable_chs)
+            self._reenable_outputs()
 
-            # run disable method to ensure LEDs are set properly
-            self.enable_output(False, enable_chs)
+    def _reenable_outputs(self):
+        """Re-enable outputs according to enable cache."""
+        enable_chs = []
+        disable_chs = []
+        for ch, enable in self._enabled_cache.items():
+            if enable is True:
+                enable_chs.append(ch)
+            else:
+                disable_chs.append(ch)
+        self.enable_output(True, enable_chs)
+
+        # run disable method to ensure LEDs are set properly
+        self.enable_output(False, enable_chs)
 
     def disconnect(self):
         """Disconnect all devices from the session.
@@ -618,17 +617,11 @@ class smu:
             self.enable_output(False)
             self.set_leds(R=True)
 
-            # remove devices from session
-            for dev in self._session.devices:
-                try:
-                    self._session.remove(dev)
-                except pysmu.SessionError:
-                    self._session.remove(dev, True)
-
             # reset channel settings
             self._channel_settings = {}
 
             # destroy the session
+            self._session._close()
             del self._session
             self._session = None
 
@@ -952,8 +945,14 @@ class smu:
         err = None
         for attempt in range(1, self._retries + 1):
             try:
-                raw_data, overcurrents, t0 = self._measure(
+                raw_data, overcurrents, t0, t1 = self._measure(
                     channels, measurement, allow_chunking
+                )
+
+                # re-format raw data to: (voltage, current, timestamp, status)
+                # and process to account for nplc and settling delay if required
+                processed_data = self._process_data(
+                    raw_data, channels, measurement, overcurrents, t0, t1
                 )
                 break
             except pysmu.SessionError as e:
@@ -976,15 +975,20 @@ class smu:
                     )
                     self._reconnect(e)
                     continue
+            except ZeroDivisionError as e:
+                if attempt == self._retries:
+                    err = e
+                else:
+                    warnings.warn(
+                        "`ZeroDivisionError` occurred during `measure()`. A device "
+                        + "probably didn't return data. Attempting to reconnect and "
+                        + "retry."
+                    )
+                    self._reconnect(e)
+                    continue
 
         if err is not None:
             raise err
-
-        # re-format raw data to: (voltage, current, timestamp, status)
-        # and process to account for nplc and settling delay if required
-        processed_data = self._process_data(
-            raw_data, channels, measurement, overcurrents, t0
-        )
 
         # return processed_data
         return processed_data
@@ -1025,7 +1029,16 @@ class smu:
             Reading start time in s.
         """
         # reset any channels in this request that have been added to the reset cache
-        self._reset_boards(channels)
+        # and are now not in high impedance mode
+        non_hi_z_chs = []
+        for ch in channels:
+            dev_ix = self._channel_settings[ch]["dev_ix"]
+            dev_channel = self._channel_settings[ch]["dev_channel"]
+            mode = self._session.devices[dev_ix].channels[dev_channel].mode
+            if mode not in [pysmu.Mode.HI_Z, pysmu.Mode.HI_Z_SPLIT]:
+                non_hi_z_chs.append(ch)
+        if len(non_hi_z_chs) > 0:
+            self._reset_boards(channels)
 
         # build samples list accounting for nplc and settling delay
         # set number of samples requested as maximum of all requested channels
@@ -1129,6 +1142,7 @@ class smu:
             for ch in channels:
                 chunk_overcurrents[ch] = self._session.devices[dev_ix].overcurrent
             overcurrents.append(chunk_overcurrents)
+        t1 = time.time()
 
         # disable/enable outputs as required
         for ch in channels:
@@ -1144,7 +1158,7 @@ class smu:
         # update the reset cache
         self._update_reset_cache()
 
-        return raw_data, overcurrents, t0
+        return raw_data, overcurrents, t0, t1
 
     def _low_level_voltage_sweep(self, start, stop, points):
         """Perform a voltage sweep and return full buffer.
@@ -1291,7 +1305,7 @@ class smu:
 
         return values
 
-    def _process_data(self, raw_data, channels, measurement, overcurrents, t0):
+    def _process_data(self, raw_data, channels, measurement, overcurrents, t0, t1):
         """Process raw data accounting for NPLC and settling delay.
 
         Parameters
@@ -1307,6 +1321,8 @@ class smu:
             List of channel overcurrent statuses for each chunk.
         t0 : float
             Timestamp representing start time (s).
+        t1 : float
+            Timestamp representing end time (s)..
 
         Returns
         -------
@@ -1349,12 +1365,17 @@ class smu:
                         data_slice = data_slice[self._settling_delay_samples :]
 
                         # approximate datum timestamp, doesn't account for chunking
-                        timestamps.append(
-                            t0
-                            + (cumulative_chunk_lengths + i)
-                            * t_delta
-                            * self._samples_per_datum
-                        )
+                        # timestamps.append(
+                        #     t0
+                        #     + (cumulative_chunk_lengths + i)
+                        #     * t_delta
+                        #     * self._samples_per_datum
+                        # )
+                        # don't estimate timestamps for sweeps, just store start value
+                        if cumulative_chunk_lengths + i == 0:
+                            timestamps.append(t0)
+                        else:
+                            timestamps.append("nan")
 
                         # pick out and process useful data
                         A_point_voltages = []
@@ -1415,7 +1436,6 @@ class smu:
                         statuses = [
                             0 if abs(i) <= self.i_threshold else 1 for i in currents
                         ]
-
                     processed_data[ch].extend(
                         [
                             (v, i, t, s)
@@ -1447,12 +1467,17 @@ class smu:
                         data_slice = data_slice[self._settling_delay_samples :]
 
                         # approximate datum timestamp, doesn't account for chunking
-                        timestamps.append(
-                            t0
-                            + (cumulative_chunk_lengths + i)
-                            * t_delta
-                            * self._samples_per_datum
-                        )
+                        # timestamps.append(
+                        #     t0
+                        #     + (cumulative_chunk_lengths + i)
+                        #     * t_delta
+                        #     * self._samples_per_datum
+                        # )
+                        # don't estimate timestamps for sweeps, just store start value
+                        if cumulative_chunk_lengths + i == 0:
+                            timestamps.append(t0)
+                        else:
+                            timestamps.append("nan")
 
                         # pick out and process useful data
                         point_voltages = []
@@ -1515,6 +1540,13 @@ class smu:
                 values = self._channel_settings[ch]["sweep_values"]
                 processed_data[ch] = processed_data[ch][: len(values)]
 
+        # set last time to t1 if more than one value measured
+        for ch in list(processed_data.keys()):
+            if len(processed_data[ch]) > 1:
+                last_row = list(processed_data[ch][-1])
+                last_row[2] = t1
+                processed_data[ch][-1] = tuple(last_row)
+
         return processed_data
 
     def enable_output(self, enable, channels=None):
@@ -1548,6 +1580,16 @@ class smu:
                     warnings.warn(
                         "`pysmu.DeviceError` occurred during `enable_output()`, "
                         + "attempting to reconnect and retry."
+                    )
+                    self._reconnect(e)
+                    continue
+            except pysmu.SessionError as e:
+                if attempt == self._retries:
+                    err = e
+                else:
+                    warnings.warn(
+                        "`pysmu.SessionError` occurred during `measure()`, attempting "
+                        + "to reconnect and retry."
                     )
                     self._reconnect(e)
                     continue
