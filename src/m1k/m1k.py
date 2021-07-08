@@ -1405,11 +1405,12 @@ class smu:
                         thresh = 0.01
                         diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
-                        keep_i = np.abs(diffs)<thresh + 1
+                        keep_i = (np.abs(diffs)<thresh)
+                        to_keep = keep_i + 1
 
-                        point_currents = pc[keep_i].tolist()
-                        A_point_voltages = np.array(A_point_voltages)[keep_i].tolist()
-                        B_point_voltages = np.array(B_point_voltages)[keep_i].tolist()
+                        point_currents = pc[to_keep].tolist()
+                        A_point_voltages = np.array(A_point_voltages)[to_keep].tolist()
+                        B_point_voltages = np.array(B_point_voltages)[to_keep].tolist()
 
                         A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
                         B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
@@ -1515,10 +1516,11 @@ class smu:
                         thresh = 0.01
                         diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
-                        keep_i = np.abs(diffs)<thresh + 1
+                        keep_i = np.abs(diffs)<thresh
+                        to_keep = keep_i + 1
 
-                        point_currents = pc[keep_i].tolist()
-                        point_voltages = np.array(point_voltages)[keep_i].tolist()
+                        point_currents = pc[to_keep].tolist()
+                        point_voltages = np.array(point_voltages)[to_keep].tolist()
 
                         voltages.append(sum(point_voltages) / len(point_voltages))
                         currents.append(sum(point_currents) / len(point_currents))
