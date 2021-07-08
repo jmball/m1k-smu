@@ -1196,7 +1196,7 @@ class smu:
             self._session.devices[dev_ix].channels[dev_channel].write(samples)
 
         self._session.start(len(samples))
-        data = self._session.run(len(samples), self.read_timeout)
+        data = self._session.read(len(samples), self.read_timeout)
 
         data_dict = {}
         for ch in self.channel_mapping.keys():
