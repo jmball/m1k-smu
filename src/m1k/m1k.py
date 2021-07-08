@@ -550,6 +550,9 @@ class smu:
             if err is not None:
                 raise err
         else:
+            # get the sample rate setting
+            sample_rate = self.sample_rate
+
             # destroy the session
             self._session._close()
             del self._session
@@ -577,6 +580,9 @@ class smu:
             # add devices to session again
             for serial in self._serials:
                 self._connect_board(serial)
+
+            # set the session sample rate
+            self._session.configure(sample_rate)
 
             # update board mapping
             self._map_boards()
