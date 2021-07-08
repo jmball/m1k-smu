@@ -3,6 +3,7 @@
 import math
 import platform
 import time
+import numpy as np
 from typing import ValuesView
 import warnings
 
@@ -1399,6 +1400,16 @@ class smu:
                             A_point_voltages.append(row[0][0])
                             B_point_voltages.append(row[1][0])
                             point_currents.append(row[0][1])
+                        
+                        # filter spikes
+                        thresh = 0.01
+                        diffs = np.diff(point_currents)
+                        pc = np.array(point_currents)
+                        keep_i = diffs<thresh
+
+                        point_currents = pc[keep_i].tolist()
+                        A_point_voltages = np.array(A_point_voltages)[keep_i].tolist()
+                        B_point_voltages = np.array(B_point_voltages)[keep_i].tolist()
 
                         A_voltages.append(sum(A_point_voltages) / len(A_point_voltages))
                         B_voltages.append(sum(B_point_voltages) / len(B_point_voltages))
@@ -1499,6 +1510,15 @@ class smu:
                         for row in data_slice:
                             point_voltages.append(row[dev_channel_num][0])
                             point_currents.append(row[dev_channel_num][1])
+                        
+                        # filter spikes
+                        thresh = 0.01
+                        diffs = np.diff(point_currents)
+                        pc = np.array(point_currents)
+                        keep_i = diffs<thresh
+
+                        point_currents = pc[keep_i].tolist()
+                        point_voltages = np.array(point_voltages)[keep_i].tolist()
 
                         voltages.append(sum(point_voltages) / len(point_voltages))
                         currents.append(sum(point_currents) / len(point_currents))
