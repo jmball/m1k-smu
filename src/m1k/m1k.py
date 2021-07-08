@@ -1397,7 +1397,7 @@ class smu:
                         
                         # filter spikes
                         thresh = 0.01
-                        diffs = np.diff(point_currents)
+                        diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
                         keep_i = diffs<thresh
 
@@ -1507,7 +1507,7 @@ class smu:
                         
                         # filter spikes
                         thresh = 0.01
-                        diffs = np.diff(point_currents)
+                        diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
                         keep_i = diffs<thresh
 
