@@ -236,7 +236,10 @@ def worker(smu, conn):
             resp = "ERROR: invalid message."
 
         # send response
-        print(f"Response: {resp}")
+        if msg_split[0] != "llvs":
+            print(f"Response: {resp}")
+        else:
+            print("Finished low level voltage sweep.")
         conn.sendall(resp.encode() + TERMCHAR_BYTES)
 
 

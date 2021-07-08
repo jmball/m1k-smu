@@ -1210,7 +1210,11 @@ class smu:
                 dev_channel_num = 0
             else:
                 dev_channel_num = 1
-            data_dict[ch] = data[dev_ix][dev_channel_num]
+            dev_data = data[dev_ix]
+            ch_data = []
+            for d in dev_data:
+                ch_data.append(d[dev_channel_num])
+            data_dict[ch] = ch_data
 
         return data_dict
 
