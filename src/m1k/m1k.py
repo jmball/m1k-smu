@@ -1405,8 +1405,8 @@ class smu:
                         thresh = 0.01
                         diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
-                        keep_i = (np.abs(diffs)<thresh)
-                        to_keep = keep_i + 1
+                        keep_i = np.abs(diffs)<thresh
+                        to_keep = np.roll(keep_i, 1)
 
                         point_currents = pc[to_keep].tolist()
                         A_point_voltages = np.array(A_point_voltages)[to_keep].tolist()
@@ -1517,7 +1517,7 @@ class smu:
                         diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
                         keep_i = np.abs(diffs)<thresh
-                        to_keep = keep_i + 1
+                        to_keep = np.roll(keep_i, 1)
 
                         point_currents = pc[to_keep].tolist()
                         point_voltages = np.array(point_voltages)[to_keep].tolist()
