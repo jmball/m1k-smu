@@ -1198,6 +1198,10 @@ class smu:
         self._session.start(len(samples))
         data = self._session.read(len(samples), self.read_timeout)
 
+        print(len(data))
+        print(len(data[0]))
+        print(len(data[0][0]))
+
         data_dict = {}
         for ch in self.channel_mapping.keys():
             dev_ix = self.channel_settings[ch]["dev_ix"]
