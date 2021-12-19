@@ -1205,10 +1205,6 @@ class smu:
         self._session.start(len(samples))
         data = self._session.read(len(samples), self.read_timeout)
 
-        print(len(data))
-        print(len(data[0]))
-        print(len(data[0][0]))
-
         data_dict = {}
         for ch in self.channel_mapping.keys():
             dev_ix = self.channel_settings[ch]["dev_ix"]
@@ -1400,12 +1396,12 @@ class smu:
                             A_point_voltages.append(row[0][0])
                             B_point_voltages.append(row[1][0])
                             point_currents.append(row[0][1])
-                        
+
                         # filter spikes
                         thresh = 0.01
                         diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
-                        keep_i = np.abs(diffs)<thresh
+                        keep_i = np.abs(diffs) < thresh
                         to_keep = np.roll(keep_i, 1)
 
                         point_currents = pc[to_keep].tolist()
@@ -1511,12 +1507,12 @@ class smu:
                         for row in data_slice:
                             point_voltages.append(row[dev_channel_num][0])
                             point_currents.append(row[dev_channel_num][1])
-                        
+
                         # filter spikes
                         thresh = 0.01
                         diffs = np.gradient(point_currents)
                         pc = np.array(point_currents)
-                        keep_i = np.abs(diffs)<thresh
+                        keep_i = np.abs(diffs) < thresh
                         to_keep = np.roll(keep_i, 1)
 
                         point_currents = pc[to_keep].tolist()

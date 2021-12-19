@@ -1,6 +1,7 @@
 """TCP server for SMU."""
 
 import ast
+import logging
 import os
 import pathlib
 import socket
@@ -8,7 +9,6 @@ import warnings
 import sys
 
 import yaml
-import pprint
 
 sys.path.insert(1, str(pathlib.Path.cwd().parent.joinpath("src")))
 import m1k.m1k as m1k
@@ -20,7 +20,16 @@ TERMCHAR_BYTES = TERMCHAR.encode()
 COMMS_TIMEOUT = 10  # in seconds
 CACHE_PATH = pathlib.Path("cache.yaml")
 
-pp = pprint.PrettyPrinter(indent=2)
+# set up logger
+logging.captureWarnings(True)
+logger = logging.getLogger()
+LOG_LEVEL = 20  # info
+logger.setLevel(LOG_LEVEL)
+
+ch = logging.StreamHandler()
+ch.setLevel(LOG_LEVEL)
+ch.setFormatter(logging.Formatter("%(asctime)s|%(name)s|%(levelname)s|%(message)s"))
+logger.addHandler(ch)
 
 
 def stringify_nonnative_dict_values(d):
@@ -70,7 +79,7 @@ def worker(smu, conn):
         with conn.makefile("r", newline=TERMCHAR) as cf:
             msg = cf.readline().rstrip(TERMCHAR)
 
-        print(f"Message received: {msg}")
+        logger.info(f"Message received: {msg}")
         msg_split = msg.split(" ")
 
         # handle message
@@ -237,16 +246,16 @@ def worker(smu, conn):
 
         # send response
         if msg_split[0] != "llvs":
-            print(f"Response: {resp}")
+            logger.debug(f"Response: {resp}")
         else:
-            print("Finished low level voltage sweep.")
+            logger.debug("Finished low level voltage sweep.")
         conn.sendall(resp.encode() + TERMCHAR_BYTES)
 
 
 # load config file
 try:
     config_path = pathlib.Path(os.environ["SMU_CONFIG_PATH"])
-    print(f"Config path: {config_path}")
+    logger.info(f"Config path: {config_path}")
     with open(config_path, "r") as f:
         config = yaml.load(f, Loader=yaml.SafeLoader)
 except KeyError:
@@ -299,8 +308,7 @@ else:
     cal_data_folder = None
     idn = "SMU"
 
-print("Channel Mapping:")
-pp.pprint(channel_mapping)
+logger.debug(f"Channel Mapping: {channel_mapping}")
 
 # init smu
 smu = m1k.smu(**init_args)
@@ -316,7 +324,7 @@ if cal_data_folder is not None:
         # pick latest one
         fs.reverse()
         cf = fs[0]
-        print(f"Loading calibration file: {cf}")
+        logger.info(f"Loading calibration file: {cf}")
 
         # load cal data
         with open(cf, "r") as f:
@@ -333,7 +341,7 @@ else:
 
 # attrempt to reload attributes from cache
 if CACHE_PATH.exists() is True:
-    print("Reloading settings after crash.")
+    logger.info("Reloading settings after crash.")
 
     try:
         # load cache
@@ -364,7 +372,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.bind((HOST, PORT))
     s.listen()
 
-    print(f"SMU server started listening on {HOST}:{PORT}")
+    logger.info(f"SMU server started listening on {HOST}:{PORT}")
 
     # service client requests
     while True:
